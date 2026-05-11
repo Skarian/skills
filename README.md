@@ -51,6 +51,14 @@ Use to research git repos when user requests.
 npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill reference-module -a codex -y
 ```
 
+### chatgpt-pro-review
+
+Use when the user explicitly asks Codex to consult ChatGPT Pro through the Codex app browser.
+
+```bash
+npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill chatgpt-pro-review -a codex -y
+```
+
 ### ui-review-claude
 
 Use to review UI screenshots in parallel with the installed Claude Code CLI.
