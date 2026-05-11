@@ -1,0 +1,3 @@
+[submodule "references/codex-imessage-handoff"]
+	path = references/codex-imessage-handoff
+	url = https://github.com/gragland/codex-imessage-handoff.git
