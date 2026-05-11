@@ -43,6 +43,14 @@ Use to research git repos when user requests.
 npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill reference-module -a codex -y
 ```
 
+### ui-review-claude
+
+Use to review UI screenshots in parallel with the installed Claude Code CLI.
+
+```bash
+npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill ui-review-claude -a codex -y
+```
+
 ### url-to-markdown-rjina
 
 Download one or more URLs as markdown files in a user-specified folder using `r.jina.ai`.
