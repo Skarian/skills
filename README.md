@@ -43,6 +43,14 @@ Use to research git repos when user requests.
 npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill reference-module -a codex -y
 ```
 
+### url-to-markdown-rjina
+
+Download one or more URLs as markdown files in a user-specified folder using `r.jina.ai`.
+
+```bash
+npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill url-to-markdown-rjina -a codex -y
+```
+
 ## User-level skills
 
 List available skills
