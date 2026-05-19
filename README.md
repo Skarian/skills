@@ -35,6 +35,14 @@ Use as the first step when the user wants an ExecPlan.
 npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill execplan-grill -a codex -y
 ```
 
+### grill-me
+
+Stress-test a plan or design through a one-question-at-a-time interview. Copied verbatim from Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md).
+
+```bash
+npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill grill-me -a codex -y
+```
+
 ### precommit-review
 
 Use when the user requests a phased pre-commit review of the worktree.
