@@ -37,7 +37,7 @@ npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill
 
 ### grill-me
 
-Stress-test a plan or design through a one-question-at-a-time interview. Copied verbatim from Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md).
+Stress-test a plan or design through a one-question-at-a-time interview. Subtree-managed from Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) skill.
 
 ```bash
 npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill grill-me -a codex -y
@@ -45,7 +45,7 @@ npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill
 
 ### humanizer
 
-Remove signs of AI-generated writing from text. Copied verbatim from [`blader/humanizer`](https://github.com/blader/humanizer/blob/main/SKILL.md).
+Remove signs of AI-generated writing from text. Subtree-managed from [`blader/humanizer`](https://github.com/blader/humanizer).
 
 ```bash
 npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill humanizer -a codex -y
@@ -86,6 +86,24 @@ npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill
 ## User-level skills
 
 No current user-level skills.
+
+## Updating upstream-managed skills
+
+Update `humanizer` from its upstream repo:
+
+```bash
+git subtree pull --prefix=project/skills/humanizer https://github.com/blader/humanizer.git main --squash
+```
+
+Update `grill-me` from Matt Pocock's nested skill directory:
+
+```bash
+tmpdir="$(mktemp -d)"
+git clone https://github.com/mattpocock/skills.git "$tmpdir/mattpocock-skills"
+git -C "$tmpdir/mattpocock-skills" subtree split --prefix=skills/productivity/grill-me -b grill-me-split
+git subtree pull --prefix=project/skills/grill-me "$tmpdir/mattpocock-skills" grill-me-split --squash
+rm -rf "$tmpdir"
+```
 
 ## Install locations
 
