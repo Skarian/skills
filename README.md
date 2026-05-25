@@ -3,7 +3,7 @@
 Vercel `skills` CLI-compatible repository with separated source packs:
 
 - `project/`: project-specific skills for repo-local installs.
-- `user/`: user-level skills for global installs.
+- `user/`: user-level skills for global installs. No current user-level skills.
 
 ## Project-specific skills
 
@@ -83,35 +83,9 @@ Use to review UI screenshots in parallel with the installed Claude Code CLI.
 npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill ui-review-claude -a codex -y
 ```
 
-### url-to-markdown-rjina
-
-Download one or more URLs as markdown files in a user-specified folder using `r.jina.ai`.
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill url-to-markdown-rjina -a codex -y
-```
-
 ## User-level skills
 
-List available skills
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/user --list -a codex
-```
-
-Interactive picker (choose a subset)
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/user -a codex -g
-```
-
-### url-to-markdown
-
-Local URL-to-markdown pipeline using Firecrawl self-hosted, with stdout output and idle shutdown.
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/user --skill url-to-markdown -a codex -g -y
-```
+No current user-level skills.
 
 ## Install locations
 
