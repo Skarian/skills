@@ -1,4 +1,4 @@
-# codex-skills
+# skills
 
 This is my single source of truth for the skills I actually use.
 

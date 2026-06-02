@@ -1,4 +1,4 @@
-# Codex Skills
+# Skills
 
 A personal skill library for software projects, agent workflows, and practical routines I want to reuse
 
@@ -15,9 +15,9 @@ It includes skills I wrote and skills collected from other repos so I can instal
 
 | Category | Command |
 | --- | --- |
-| Project | `npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/project` |
-| General | `npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/general --global` |
-| Personal | `npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/personal` |
+| Project | `npx skills add https://github.com/Skarian/skills/tree/main/skills/project` |
+| General | `npx skills add https://github.com/Skarian/skills/tree/main/skills/general --global` |
+| Personal | `npx skills add https://github.com/Skarian/skills/tree/main/skills/personal` |
 
 ## Project
 

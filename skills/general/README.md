@@ -7,7 +7,7 @@ Skills meant to be installed system-wide
 Install skills from this category:
 
 ```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/general --global
+npx skills add https://github.com/Skarian/skills/tree/main/skills/general --global
 ```
 
 ## Skills

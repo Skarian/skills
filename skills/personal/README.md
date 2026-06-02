@@ -7,7 +7,7 @@ Niche workflows specific to my use cases
 Install skills from this category:
 
 ```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/personal
+npx skills add https://github.com/Skarian/skills/tree/main/skills/personal
 ```
 
 ## Skills

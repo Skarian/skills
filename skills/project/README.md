@@ -7,7 +7,7 @@ Skills for software projects, installed into the current repo
 Install skills from this category:
 
 ```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/project
+npx skills add https://github.com/Skarian/skills/tree/main/skills/project
 ```
 
 ## Skills
