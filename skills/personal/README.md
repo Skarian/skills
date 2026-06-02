@@ -1,13 +1,13 @@
 # Personal Skills
 
-Niche workflows specific to my use cases
+Niche workflows specific to my use cases, installed system-wide
 
 ## Install
 
 Install skills from this category:
 
 ```bash
-npx skills add https://github.com/Skarian/skills/tree/main/skills/personal
+npx skills add https://github.com/Skarian/skills/tree/main/skills/personal --global
 ```
 
 ## Skills

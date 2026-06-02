@@ -17,7 +17,7 @@ It includes skills I wrote and skills collected from other repos so I can instal
 | --- | --- |
 | Project | `npx skills add https://github.com/Skarian/skills/tree/main/skills/project` |
 | General | `npx skills add https://github.com/Skarian/skills/tree/main/skills/general --global` |
-| Personal | `npx skills add https://github.com/Skarian/skills/tree/main/skills/personal` |
+| Personal | `npx skills add https://github.com/Skarian/skills/tree/main/skills/personal --global` |
 
 ## Project
 
