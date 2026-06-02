@@ -1,6 +1,4 @@
 .DS_Store
-AGENTS.md
-.agents/skills/
 .claude/skills/
 .agent/
 .agents/

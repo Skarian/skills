@@ -1,112 +1,48 @@
-# My Personal Codex Skills Repository
+# Codex Skills
 
-Vercel `skills` CLI-compatible repository with separated source packs:
+A personal skill library for software projects, agent workflows, and practical routines I want to reuse
 
-- `project/`: project-specific skills for repo-local installs.
-- `user/`: user-level skills for global installs. No current user-level skills.
+It includes skills I wrote and skills collected from other repos so I can install them from one place
 
-## Project-specific skills
+## Categories
 
-List available skills
+- `skills/project/`: skills for software projects
+- `skills/general/`: skills meant to be installed system-wide
+- `skills/personal/`: niche workflows specific to my use cases
+- `skills/retired/`: skills I used in the past
 
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --list -a codex
-```
+## Install
 
-Interactive picker (choose a subset)
+| Category | Command |
+| --- | --- |
+| Project | `npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/project` |
+| General | `npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/general --global` |
+| Personal | `npx skills add https://github.com/Skarian/codex-skills/tree/main/skills/personal` |
 
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project -a codex
-```
+## Project
 
-### execplan-review
+| Skill | Description |
+| --- | --- |
+| `execplan` | Create detailed plans for long-running agent work |
+| `scratch` | Start a repo-root scratch file for working drafts |
 
-Use when the user requests a review of the ExecPlan.
+## General
 
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill execplan-review -a codex -y
-```
+| Skill | Description |
+| --- | --- |
+| `chatgpt-pro-review` | Consult ChatGPT Pro through the Codex app browser |
+| `consensus` | Use subagent review waves to reach consensus |
+| `discussion` | Discuss multiple open items clearly |
+| `friend` | Use Claude, Gemini, or Codex for reviews |
+| `grill-me` ([source](https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md)) | Create a shared understanding between agent and user |
+| `humanizer` ([source](https://github.com/blader/humanizer/blob/main/SKILL.md)) | Remove AI slop from writing |
+| `reference-module` | Study a git repository with a local cache across projects |
+| `skill-research` | Scan Codex sessions, memories, and Chronicle for potential skills |
 
-### execplan-grill
+## Personal
 
-Use as the first step when the user wants an ExecPlan.
+| Skill | Description |
+| --- | --- |
+| `screenshot` | Review the latest screenshot on Desktop |
 
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill execplan-grill -a codex -y
-```
-
-### grill-me
-
-Stress-test a plan or design through a one-question-at-a-time interview. Subtree-managed from Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) skill.
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill grill-me -a codex -y
-```
-
-### humanizer
-
-Remove signs of AI-generated writing from text. Subtree-managed from [`blader/humanizer`](https://github.com/blader/humanizer).
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill humanizer -a codex -y
-```
-
-### precommit-review
-
-Use when the user requests a phased pre-commit review of the worktree.
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill precommit-review -a codex -y
-```
-
-### reference-module
-
-Use to research git repos when user requests.
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill reference-module -a codex -y
-```
-
-### chatgpt-pro-review
-
-Use when the user explicitly asks Codex to consult ChatGPT Pro through the Codex app browser.
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill chatgpt-pro-review -a codex -y
-```
-
-### ui-review-claude
-
-Use to review UI screenshots in parallel with the installed Claude Code CLI.
-
-```bash
-npx skills add https://github.com/Skarian/codex-skills/tree/main/project --skill ui-review-claude -a codex -y
-```
-
-## User-level skills
-
-No current user-level skills.
-
-## Updating upstream-managed skills
-
-Update `humanizer` from its upstream repo:
-
-```bash
-git subtree pull --prefix=project/skills/humanizer https://github.com/blader/humanizer.git main --squash
-```
-
-Update `grill-me` from Matt Pocock's nested skill directory:
-
-```bash
-tmpdir="$(mktemp -d)"
-git clone https://github.com/mattpocock/skills.git "$tmpdir/mattpocock-skills"
-git -C "$tmpdir/mattpocock-skills" subtree split --prefix=skills/productivity/grill-me -b grill-me-split
-git subtree pull --prefix=project/skills/grill-me "$tmpdir/mattpocock-skills" grill-me-split --squash
-rm -rf "$tmpdir"
-```
-
-## Install locations
-
-| Agent | Project install                | Global install                  |
-| ----- | ------------------------------ | ------------------------------- |
-| Codex | `.agents/skills/<skill-name>/` | `~/.codex/skills/<skill-name>/` |
+See [Acknowledgments](ACKNOWLEDGMENTS.md) for original sources for skills that originated from other repos or external opinions
