@@ -22,5 +22,5 @@ npx skills add https://github.com/Skarian/skills/tree/main/skills/general --glob
 | `handoff` | Compact the current conversation into a handoff document for another agent to pick up |
 | `humanizer` | Remove AI slop from writing |
 | `reference-module` | Study a git repository with a local cache across projects |
+| `relay` | Interact with Codex or Claude from another UI or application |
 | `skill-research` | Scan Codex sessions, memories, and Chronicle for potential skills |
-| `relay` | Coordinate local apps and UIs with existing agents through a durable MCP relay |

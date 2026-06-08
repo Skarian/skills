@@ -38,6 +38,7 @@ It includes skills I wrote and skills collected from other repos so I can instal
 | `handoff` ([source](https://github.com/mattpocock/skills/blob/main/skills/productivity/handoff/SKILL.md)) | Compact the current conversation into a handoff document for another agent to pick up |
 | `humanizer` ([source](https://github.com/blader/humanizer/blob/main/SKILL.md)) | Remove AI slop from writing |
 | `reference-module` | Study a git repository with a local cache across projects |
+| `relay` | Interact with Codex or Claude from another UI or application |
 | `skill-research` | Scan Codex sessions, memories, and Chronicle for potential skills |
 
 ## Personal

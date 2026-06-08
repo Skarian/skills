@@ -1,8 +1,8 @@
 # Relay
 
-Relay lets a local app hand work to the current Codex or Claude agent and get a reply.
+Relay lets you interact with Codex or Claude from another UI or application.
 
-It is a thin MCP bridge, not an app framework. Relay owns waiting, delivery, reply correlation, and close. The app owns the payload.
+It is a thin MCP bridge, not an app framework. Relay owns waiting, delivery, reply correlation, and close. The UI or application owns the payload.
 
 ## Agent use
 
