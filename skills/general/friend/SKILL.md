@@ -11,6 +11,8 @@ Prefer Claude for UI, screenshots, and visual review; Gemini for web, source-bac
 
 Run the bundled `scripts/friend` wrapper:
 
+Submit the shell command with sandbox escalation up front; do not try the wrapper inside the restricted sandbox first.
+
 ```bash
 friend <claude|gemini|codex> "question" [evidence paths or URLs...] [--model name]
 ```
