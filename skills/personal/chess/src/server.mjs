@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -22,7 +23,16 @@ const __dirname = path.dirname(__filename);
 const skillRoot = path.resolve(__dirname, "..");
 const publicRoot = path.join(skillRoot, "public");
 const DEFAULT_MAIA_ELO = 600;
-const COACH_BYPASS_MS = 20000;
+const LIVE_LADDER = ["think_gate", "general_nudge", "focal_direction", "concrete_clue", "gated_reveal"];
+const DEFAULT_LIVE_BUDGET = {
+  followupsMax: 3,
+  revealsMax: 1,
+  visibleSoftCap: 8,
+  maxWords: 45,
+};
+const LEGACY_LIVE_ERROR = {
+  error: "The legacy live hint flow was removed. Use /api/coach/message.",
+};
 
 const MIME = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -156,6 +166,41 @@ function defaultProfile() {
   };
 }
 
+function hashFen(fen) {
+  return createHash("sha256").update(fen).digest("hex").slice(0, 12);
+}
+
+function wordCount(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function currentTurnMeta(session, game) {
+  const fen = game.fen();
+  const fenHash = hashFen(fen);
+  const ply = session.plies.length;
+  const sideToMove = game.turn();
+  return {
+    turnId: `${session.gameId}:${ply}:${sideToMove}:${fenHash}`,
+    fen,
+    fenHash,
+    ply,
+    sideToMove,
+  };
+}
+
+function scoreBucket(score) {
+  if (score === null || score === undefined) return "unknown";
+  if (score >= 300) return "winning";
+  if (score >= 100) return "advantage";
+  if (score <= -300) return "losing";
+  if (score <= -100) return "under_pressure";
+  return "balanced";
+}
+
 function classifyBestMove(game, bestmove) {
   if (!bestmove || bestmove === "(none)") {
     return "quiet";
@@ -172,28 +217,22 @@ function classifyBestMove(game, bestmove) {
   return "quiet";
 }
 
-function hintText(level, theme, analysis) {
-  if (level === "reveal") {
-    const firstLine = analysis.lines[0]?.pv?.join(" ") || analysis.bestmove || "none";
-    return `Best candidate: ${analysis.bestmove}. Principal line: ${firstLine}.`;
+function localCoachText(ladderStep, theme) {
+  const themeText = {
+    mate: "forcing king moves",
+    check: "checks and direct threats",
+    capture: "loose material and captures",
+    piece_activity: "piece activity with tempo",
+    candidate: "candidate moves before quiet development",
+    quiet: "the opponent threat before improving a piece",
+  };
+  if (ladderStep === "concrete_clue") {
+    return `Focus on ${themeText[theme] || "the most forcing feature"} before choosing a quiet move.`;
   }
-  const nudgeByTheme = {
-    mate: "There is a forcing resource in the position.",
-    check: "Start by checking forcing moves.",
-    capture: "A capture or material tactic deserves attention.",
-    piece_activity: "One piece can become more active with tempo.",
-    candidate: "Compare forcing candidates before choosing a quiet move.",
-    quiet: "Slow down and check your opponent's threat before improving your worst piece.",
-  };
-  const directionByTheme = {
-    mate: "Look first at forcing king moves: checks, captures near the king, and mating nets.",
-    check: "The strongest idea begins with a check or direct forcing move.",
-    capture: "Focus on loose material and whether a capture changes the forcing sequence.",
-    piece_activity: "Look for a developing or improving move that also creates a threat.",
-    candidate: "List two candidate moves and reject the one that leaves the biggest tactical problem.",
-    quiet: "Choose the move that improves coordination while answering the opponent's most direct threat.",
-  };
-  return level === "direction" ? directionByTheme[theme] : nudgeByTheme[theme];
+  if (ladderStep === "focal_direction") {
+    return `The key feature is ${themeText[theme] || "the most urgent board change"}. What candidate addresses it?`;
+  }
+  return "What is Black threatening, and what are your two most forcing candidate moves?";
 }
 
 function reviewDrop(before, after) {
@@ -211,35 +250,95 @@ function classifyDrop(drop) {
   return "ok";
 }
 
-function compactAnalysis(analysis) {
+function compactLiveAnalysis(game, analysis) {
   if (!analysis) return null;
+  const legal = game.moves({ verbose: true });
+  const primaryTheme = classifyBestMove(game, analysis.bestmove);
   return {
-    fen: analysis.fen,
-    depth: analysis.depth,
-    multipv: analysis.multipv,
-    bestmove: analysis.bestmove,
-    lines: analysis.lines.map((line) => ({
-      multipv: line.multipv || 1,
-      score: line.score || null,
-      pv: line.pv || [],
-    })),
+    evalBucket: scoreBucket(scoreForWhite(analysis, game.fen())),
+    tacticalFlags: {
+      inCheck: game.inCheck(),
+      primaryTheme,
+      hasLegalCheck: legal.some((move) => move.san.includes("+")),
+      hasLegalCapture: legal.some((move) => move.flags.includes("c") || move.flags.includes("e")),
+    },
+    candidateLandscape: {
+      legalMoveCount: legal.length,
+      forcingMoveCount: legal.filter((move) => move.san.includes("+") || move.flags.includes("c") || move.flags.includes("e")).length,
+      quietMoveCount: legal.filter((move) => !move.san.includes("+") && !move.flags.includes("c") && !move.flags.includes("e")).length,
+    },
+    threatMap: {
+      pressure: primaryTheme,
+    },
   };
+}
+
+function privateAnalysisTerms(game, analysis) {
+  const values = new Set();
+  for (const move of game.moves({ verbose: true })) {
+    values.add(move.san);
+    values.add(moveToUci(move));
+  }
+  if (analysis?.bestmove) values.add(analysis.bestmove);
+  for (const line of analysis?.lines || []) {
+    for (const move of line.pv || []) values.add(move);
+    if (line.score) {
+      values.add(String(line.score.value));
+      values.add(`${line.score.kind} ${line.score.value}`);
+    }
+  }
+  return [...values].filter((value) => String(value).trim()).sort((a, b) => b.length - a.length);
+}
+
+function defaultLiveState({ enabled = false } = {}) {
+  return {
+    state: enabled ? "ready" : "disabled",
+    pendingRequests: {},
+    transcript: [],
+    budget: { ...DEFAULT_LIVE_BUDGET },
+    usage: {
+      followups: 0,
+      reveals: 0,
+      visibleMessages: 0,
+    },
+    status: {
+      kind: enabled ? "ready" : "disabled",
+      requestId: null,
+      at: null,
+    },
+  };
+}
+
+function normalizeLiveState(live, { enabled = false } = {}) {
+  const next = defaultLiveState({ enabled });
+  const existing = isPlainObject(live) ? live : {};
+  next.pendingRequests = enabled && isPlainObject(existing.pendingRequests) ? existing.pendingRequests : {};
+  next.transcript = Array.isArray(existing.transcript) ? existing.transcript.slice(-40) : [];
+  next.budget = {
+    ...DEFAULT_LIVE_BUDGET,
+    ...(isPlainObject(existing.budget) ? existing.budget : {}),
+  };
+  next.usage = {
+    followups: Number(existing.usage?.followups || 0),
+    reveals: Number(existing.usage?.reveals || 0),
+    visibleMessages: Number(existing.usage?.visibleMessages || 0),
+  };
+  next.status = {
+    ...next.status,
+    ...(isPlainObject(existing.status) ? existing.status : {}),
+  };
+  next.state = enabled
+    ? (Object.values(next.pendingRequests).some((request) => request.status === "pending") ? "pending" : "ready")
+    : "disabled";
+  if (!enabled) next.status.kind = "disabled";
+  return next;
 }
 
 function defaultCoachState({ enabled = false, relayAppName = "chess" } = {}) {
   return {
     enabled,
     relayAppName,
-    live: {
-      state: "playing_ready",
-      requestId: null,
-      requestedAt: null,
-      fen: null,
-      card: null,
-      history: [],
-      bypassAvailableAfterMs: COACH_BYPASS_MS,
-      bypassedAt: null,
-    },
+    live: defaultLiveState({ enabled }),
     review: {
       state: "idle",
       planRequestId: null,
@@ -261,11 +360,7 @@ function ensureCoachState(session, { enabled = false, relayAppName = "chess" } =
   delete session.coach.replyAfter;
   delete session.coach.replyCursor;
   delete session.coach.relayId;
-  session.coach.live = {
-    ...defaultCoachState({ enabled, relayAppName }).live,
-    ...(session.coach.live || {}),
-    bypassAvailableAfterMs: COACH_BYPASS_MS,
-  };
+  session.coach.live = normalizeLiveState(session.coach.live, { enabled });
   session.coach.review = {
     ...defaultCoachState({ enabled, relayAppName }).review,
     ...(session.coach.review || {}),
@@ -418,47 +513,279 @@ export async function startServer(options = {}) {
     }));
   }
 
-  function baseCoachPayload(extra = {}) {
-    const recentCards = session.coach?.live?.history?.slice(-3) || [];
-    return {
-      schemaVersion: 1,
-      gameId: session.gameId,
-      maia: session.maia,
-      profile,
-      status: gameStatus(game),
-      fen: game.fen(),
-      pgn: game.pgn(),
-      turn: game.turn(),
-      legalMoves: legalMovePayload(),
-      recentPlies: session.plies.slice(-6),
-      lastUserMove: [...session.plies].reverse().find((ply) => ply.side === "user") || null,
-      lastMaiaMove: [...session.plies].reverse().find((ply) => ply.side === "maia") || null,
-      recentHints: session.hints.slice(-5),
-      recentCoachCards: recentCards,
-      currentMaiaLevel: session.maia.elo,
-      ...extra,
-    };
-  }
-
   function relayPacket(kind, markdown, data) {
     return { kind, markdown, data };
   }
 
-  function liveCoachMarkdown(data) {
-    const help = data.helpLevel ? `Help level: ${data.helpLevel}` : "Help level: default non-spoiler coach card";
+  function lastPly(side) {
+    return [...session.plies].reverse().find((ply) => ply.side === side) || null;
+  }
+
+  function liveEntriesForFen(fenHash) {
+    return (session.coach?.live?.transcript || []).filter((entry) => entry.fenHash === fenHash);
+  }
+
+  function maxLadderIndexForFen(fenHash) {
+    return liveEntriesForFen(fenHash)
+      .filter((entry) => entry.role === "coach" && entry.ladderStep !== "gated_reveal")
+      .reduce((max, entry) => Math.max(max, LIVE_LADDER.indexOf(entry.ladderStep)), -1);
+  }
+
+  function mapCoachIntent(text, meta) {
+    const normalized = String(text || "").trim().toLowerCase();
+    const wantsReveal = /\breveal\b/.test(normalized);
+    const live = session.coach.live;
+    const previousCoachEntries = liveEntriesForFen(meta.fenHash).filter((entry) => entry.role === "coach");
+    const nonRevealCount = previousCoachEntries.filter((entry) => entry.ladderStep !== "gated_reveal").length;
+    const reachedConcrete = previousCoachEntries.some((entry) => entry.ladderStep === "concrete_clue");
+    const revealAllowed = wantsReveal
+      && live.usage.reveals < live.budget.revealsMax
+      && (reachedConcrete || nonRevealCount >= 2);
+
+    if (wantsReveal && revealAllowed) {
+      return { intent: "reveal", ladderStep: "gated_reveal", revealAllowed };
+    }
+
+    const maxIndex = maxLadderIndexForFen(meta.fenHash);
+    if (wantsReveal || normalized === "more") {
+      const nextIndex = Math.min(Math.max(maxIndex + 1, 1), LIVE_LADDER.indexOf("concrete_clue"));
+      return {
+        intent: wantsReveal ? "reveal_denied" : "more",
+        ladderStep: LIVE_LADDER[nextIndex],
+        revealAllowed: false,
+      };
+    }
+    if (normalized === "stuck") {
+      return { intent: "stuck", ladderStep: "general_nudge", revealAllowed: false };
+    }
+    if (normalized === "why") {
+      return { intent: "why", ladderStep: "focal_direction", revealAllowed: false };
+    }
+    return { intent: "question", ladderStep: "think_gate", revealAllowed: false };
+  }
+
+  function appendLiveTranscript(entry) {
+    const live = session.coach.live;
+    live.transcript = [...(live.transcript || []), {
+      id: timestampId("coach-msg"),
+      at: new Date().toISOString(),
+      ...entry,
+    }].slice(-40);
+  }
+
+  function updateLiveStatus(kind = null, requestId = null) {
+    const live = session.coach.live;
+    const hasPending = Object.values(live.pendingRequests || {}).some((request) => request.status === "pending");
+    live.state = session.coach.enabled ? (hasPending ? "pending" : "ready") : "disabled";
+    if (kind) {
+      live.status = {
+        kind,
+        requestId,
+        at: new Date().toISOString(),
+      };
+    } else if (!hasPending && live.status?.kind === "pending") {
+      live.status = {
+        kind: live.state,
+        requestId: null,
+        at: new Date().toISOString(),
+      };
+    }
+  }
+
+  async function expirePendingLiveRequests(reason) {
+    const live = session.coach?.live;
+    if (!live?.pendingRequests) return;
+    const pending = Object.values(live.pendingRequests).filter((request) => request.status === "pending");
+    for (const request of pending) {
+      request.status = "stale";
+      request.staleReason = reason;
+      request.staleAt = new Date().toISOString();
+      await appendEvent(dataRoot, "coach_reply_expired", {
+        gameId: session.gameId,
+        requestId: request.requestId,
+        reason,
+        turnId: request.turnId,
+      });
+    }
+    if (pending.length) updateLiveStatus("expired", pending[pending.length - 1].requestId);
+  }
+
+  function livePacketMarkdown(packet) {
     return [
-      "# Chess Live Coach Request",
+      "# Chess Live Coach",
       "",
-      help,
-      `Game: ${data.gameId}`,
-      `Maia level: ${data.currentMaiaLevel}`,
-      `Position: ${data.fen}`,
-      `PGN: ${data.pgn || "(empty)"}`,
-      data.lastUserMove ? `Last user move: ${data.lastUserMove.san} (${data.lastUserMove.uci})` : "Last user move: none",
-      data.lastMaiaMove ? `Last Maia move: ${data.lastMaiaMove.san} (${data.lastMaiaMove.uci})` : "Last Maia move: none",
+      `Return exactly: { "message": "<text>" }`,
+      `Help step: ${packet.request.ladderStep}`,
+      `Reveal allowed: ${packet.request.revealPermission ? "yes" : "no"}`,
+      `Max words: ${packet.request.maxWords}`,
+      `FEN: ${packet.position.fen}`,
+      `Recent plies: ${packet.position.recentPlies.map((ply) => ply.san).join(" ") || "(none)"}`,
       "",
-      "Write a concise coach card for the web UI. Do not reveal best moves, PVs, or eval numbers unless this is a reveal request.",
+      "Be short, legal, position-specific, and non-spoiler unless reveal is allowed.",
     ].join("\n");
+  }
+
+  function buildLivePacket({ appRequestId, text, intent, ladderStep, revealAllowed, meta, analysis }) {
+    const packet = {
+      schemaVersion: 2,
+      kind: "chess.live_coach",
+      request: {
+        requestId: appRequestId,
+        kind: revealAllowed ? "reveal" : "followup",
+        gameId: session.gameId,
+        turnId: meta.turnId,
+        fenHash: meta.fenHash,
+        ply: meta.ply,
+        sideToMove: meta.sideToMove,
+        userText: text,
+        intent,
+        ladderStep,
+        remainingBudget: {
+          followups: Math.max(0, session.coach.live.budget.followupsMax - session.coach.live.usage.followups),
+          reveals: Math.max(0, session.coach.live.budget.revealsMax - session.coach.live.usage.reveals),
+        },
+        maxWords: session.coach.live.budget.maxWords,
+        revealPermission: revealAllowed,
+      },
+      position: {
+        fen: meta.fen,
+        sideToMove: meta.sideToMove,
+        status: gameStatus(game),
+        recentPlies: session.plies.slice(-6),
+        lastUserMove: lastPly("user"),
+        lastMaiaMove: lastPly("maia"),
+        legalMoves: legalMovePayload().map((move) => ({
+          san: move.san,
+          uci: move.uci,
+          from: move.from,
+          to: move.to,
+          piece: move.piece,
+          captured: Boolean(move.captured),
+        })),
+      },
+      learner: {
+        color: "white",
+        maiaLevel: session.maia.elo,
+        calibration: profile.calibration || "active",
+        activeThemes: Array.isArray(profile.activeThemes) ? profile.activeThemes.slice(0, 3) : [],
+        wording: profile.wording || "concise",
+      },
+      coachContext: {
+        recentVisibleMessages: (session.coach.live.transcript || []).slice(-6).map((entry) => ({
+          role: entry.role,
+          text: entry.text,
+          ladderStep: entry.ladderStep || null,
+        })),
+        visibleMessagesThisGame: session.coach.live.usage.visibleMessages,
+        followupsUsed: session.coach.live.usage.followups,
+        revealsUsed: session.coach.live.usage.reveals,
+        visibleSoftCap: session.coach.live.budget.visibleSoftCap,
+        cadenceReason: "typed_user_request",
+      },
+      analysis: compactLiveAnalysis(game, analysis),
+      humanLikeness: {
+        maiaLevel: session.maia.elo,
+        maiaModel: session.maia.model,
+        lastMaiaMove: lastPly("maia"),
+      },
+      constraints: {
+        replySchema: { message: "string" },
+        nonSpoiler: !revealAllowed,
+        legalMoveGrounding: true,
+        maxWords: session.coach.live.budget.maxWords,
+        revealPermission: revealAllowed,
+        doNotEcho: ["engine names", "numeric analysis", "engine line details", "top-candidate phrasing"],
+      },
+    };
+    return {
+      ...packet,
+      markdown: livePacketMarkdown(packet),
+    };
+  }
+
+  function parseLiveMessage(payload) {
+    if (!isPlainObject(payload)) {
+      return { ok: false, reason: "not_object" };
+    }
+    const keys = Object.keys(payload);
+    if (keys.length !== 1 || keys[0] !== "message" || typeof payload.message !== "string") {
+      return { ok: false, reason: "invalid_schema" };
+    }
+    return { ok: true, message: payload.message };
+  }
+
+  function escapedPattern(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function includesTerm(text, term) {
+    const value = String(term || "").trim();
+    if (value.length < 2) return false;
+    const pattern = new RegExp(`(^|[^A-Za-z0-9])${escapedPattern(value)}($|[^A-Za-z0-9])`, "i");
+    return pattern.test(text);
+  }
+
+  function filterLiveMessage(request, message) {
+    const text = String(message || "").trim();
+    if (!text) return { ok: true, text };
+    if (wordCount(text) > request.maxWords) return { ok: false, reason: "overlong" };
+    if (/\b(stockfish|maia|engine|eval|evaluation|principal variation|pv|centipawn|uci)\b/i.test(text)) {
+      return { ok: false, reason: "engine_language" };
+    }
+    if (/\bbest\s+(move|candidate|line)\b/i.test(text)) {
+      return { ok: false, reason: "best_move_language" };
+    }
+    if (!request.revealAllowed && /\b[a-h][1-8][a-h][1-8][qrbn]?\b/i.test(text)) {
+      return { ok: false, reason: "uci_leak" };
+    }
+    if (!request.revealAllowed && (request.privateTerms || []).some((term) => includesTerm(text, term))) {
+      return { ok: false, reason: "private_term_echo" };
+    }
+    const legalTerms = new Set(request.legalTerms || []);
+    const moveLike = text.match(/\b(?:O-O-O|O-O|[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h]x[a-h][1-8]|[a-h][1-8])(?:=[QRBN])?[+#]?\b/g) || [];
+    if (moveLike.some((term) => !legalTerms.has(term))) {
+      return { ok: false, reason: "illegal_move_advice" };
+    }
+    return { ok: true, text };
+  }
+
+  async function createCoachMessageRequest({ text, intent, ladderStep, revealAllowed, meta, analysis }) {
+    const appRequestId = timestampId("coach-request");
+    const packet = buildLivePacket({ appRequestId, text, intent, ladderStep, revealAllowed, meta, analysis });
+    const resolvedRequest = await createRelayMessage({ payload: packet });
+    if (!resolvedRequest) return null;
+
+    const requestId = String(resolvedRequest.requestId);
+    const legalMoves = legalMovePayload();
+    session.coach.live.pendingRequests[requestId] = {
+      requestId,
+      appRequestId,
+      relayEventId: resolvedRequest.eventId,
+      kind: revealAllowed ? "reveal" : "followup",
+      sentAt: new Date().toISOString(),
+      turnId: meta.turnId,
+      fenHash: meta.fenHash,
+      ply: meta.ply,
+      sideToMove: meta.sideToMove,
+      userText: text,
+      intent,
+      ladderStep,
+      revealAllowed,
+      maxWords: session.coach.live.budget.maxWords,
+      status: "pending",
+      privateTerms: privateAnalysisTerms(game, analysis),
+      legalTerms: legalMoves.flatMap((move) => [move.san, move.uci]),
+    };
+    updateLiveStatus("pending", requestId);
+    await appendEvent(dataRoot, "coach_message_requested", {
+      gameId: session.gameId,
+      requestId,
+      appRequestId,
+      intent,
+      ladderStep,
+      revealAllowed,
+    });
+    return resolvedRequest;
   }
 
   function reviewPlanMarkdown(data) {
@@ -511,46 +838,6 @@ export async function startServer(options = {}) {
       eventId: event.eventId,
       payload,
     };
-  }
-
-  async function createLiveCoachRequest({ type = "chess.live_coach", helpLevel = null } = {}) {
-    if (game.isGameOver() || game.turn() !== "w") return null;
-    const analysis = await analyzeFen(game.fen(), {
-      depth: Number(process.env.CHESS_COACH_DEPTH || process.env.CHESS_HINT_DEPTH || 7),
-      multipv: Number(process.env.CHESS_COACH_MULTIPV || 3),
-    });
-    const payload = baseCoachPayload({
-      kind: type,
-      helpLevel,
-      privateAnalysis: compactAnalysis(analysis),
-      displayPolicy: {
-        liveDefault: "non_spoiler",
-        allowBestMoveOnlyWhenRequested: helpLevel === "reveal",
-      },
-    });
-    const packet = relayPacket(type, liveCoachMarkdown(payload), payload);
-    const request = createRelayMessage({
-      payload: packet,
-    });
-    const resolvedRequest = await request;
-    if (!resolvedRequest) return null;
-    session.coach.live = {
-      ...session.coach.live,
-      state: "playing_waiting_for_coach",
-      requestId: resolvedRequest.requestId,
-      requestType: type,
-      requestedAt: new Date().toISOString(),
-      fen: game.fen(),
-      card: null,
-      bypassedAt: null,
-    };
-    await appendEvent(dataRoot, "coach_request_created", {
-      gameId: session.gameId,
-      type,
-      requestId: resolvedRequest.requestId,
-      helpLevel,
-    });
-    return resolvedRequest;
   }
 
   async function updateReviewArtifact(mutator) {
@@ -647,6 +934,78 @@ export async function startServer(options = {}) {
     return resolvedRequest;
   }
 
+  async function handleLiveReply({ inReplyTo, payload }) {
+    const live = session.coach.live;
+    const requestId = String(inReplyTo || "");
+    const request = live.pendingRequests?.[requestId];
+    if (!request) return false;
+
+    delete live.pendingRequests[requestId];
+    const meta = currentTurnMeta(session, game);
+    const stale = request.status !== "pending"
+      || request.turnId !== meta.turnId
+      || request.fenHash !== meta.fenHash
+      || request.ply !== meta.ply
+      || request.sideToMove !== meta.sideToMove;
+    if (stale) {
+      updateLiveStatus("expired", requestId);
+      await appendEvent(dataRoot, "coach_reply_stale", {
+        gameId: session.gameId,
+        requestId,
+        expectedTurnId: request.turnId,
+        currentTurnId: meta.turnId,
+      });
+      return true;
+    }
+
+    const parsed = parseLiveMessage(payload);
+    if (!parsed.ok) {
+      updateLiveStatus("filtered", requestId);
+      await appendEvent(dataRoot, "coach_reply_rejected", {
+        gameId: session.gameId,
+        requestId,
+        reason: parsed.reason,
+      });
+      return true;
+    }
+
+    if (parsed.message === "") {
+      updateLiveStatus(null, null);
+      await appendEvent(dataRoot, "coach_reply_empty", { gameId: session.gameId, requestId });
+      return true;
+    }
+
+    const filtered = filterLiveMessage(request, parsed.message);
+    if (!filtered.ok) {
+      updateLiveStatus("filtered", requestId);
+      await appendEvent(dataRoot, "coach_reply_filtered", {
+        gameId: session.gameId,
+        requestId,
+        reason: filtered.reason,
+      });
+      return true;
+    }
+
+    appendLiveTranscript({
+      role: "coach",
+      text: filtered.text,
+      requestId,
+      turnId: request.turnId,
+      fenHash: request.fenHash,
+      ply: request.ply,
+      sideToMove: request.sideToMove,
+      ladderStep: request.ladderStep,
+    });
+    live.usage.visibleMessages += 1;
+    updateLiveStatus("ready", null);
+    await appendEvent(dataRoot, "coach_message_received", {
+      gameId: session.gameId,
+      requestId,
+      ladderStep: request.ladderStep,
+    });
+    return true;
+  }
+
   async function applyRelayReceive(client, received) {
     const replies = received.items || [];
     let changed = false;
@@ -655,10 +1014,7 @@ export async function startServer(options = {}) {
       if (reply.status === "closed") {
         session.coach.enabled = false;
         relayClient = null;
-        if (session.coach.live?.state === "playing_waiting_for_coach") {
-          session.coach.live.state = "playing_ready";
-          session.coach.live.requestId = null;
-        }
+        session.coach.live = normalizeLiveState(session.coach.live, { enabled: false });
         const reviewState = session.coach.review;
         if (["review_planning", "review_card_loading"].includes(reviewState?.state)) {
           reviewState.state = "review_complete";
@@ -671,24 +1027,7 @@ export async function startServer(options = {}) {
       const inReplyTo = Number(reply.inReplyTo || 0);
       const replyPayload = reply.payload || {};
       const replyData = replyPayload?.data && typeof replyPayload.data === "object" ? replyPayload.data : replyPayload;
-      const live = session.coach.live;
-      if (live?.requestId && live.state === "playing_waiting_for_coach" && inReplyTo === Number(live.requestId)) {
-        const card = normalizedAgentCard(replyPayload, {
-          requestId: live.requestId,
-          mode: live.requestType === "chess.followup" ? "followup" : "live",
-          fallbackTitle: live.requestType === "chess.followup" ? "Coach Follow-Up" : "Coach",
-        });
-        if (card.staleIfFenChanged && live.fen !== game.fen()) {
-          live.state = "playing_ready";
-          live.requestId = null;
-        } else if (live.bypassedAt) {
-          live.requestId = null;
-        } else {
-          live.state = "playing_ready";
-          live.card = card;
-          live.history = [...(live.history || []), card].slice(-20);
-          await appendEvent(dataRoot, "coach_card_received", { gameId: session.gameId, requestId: live.requestId });
-        }
+      if (await handleLiveReply({ inReplyTo, payload: replyPayload })) {
         changed = true;
         continue;
       }
@@ -781,10 +1120,7 @@ export async function startServer(options = {}) {
   async function stopRelayCoachingForError(error) {
     session.coach.enabled = false;
     relayClient = null;
-    if (session.coach.live?.state === "playing_waiting_for_coach") {
-      session.coach.live.state = "playing_ready";
-      session.coach.live.requestId = null;
-    }
+    session.coach.live = normalizeLiveState(session.coach.live, { enabled: false });
     const reviewState = session.coach.review;
     if (["review_planning", "review_card_loading"].includes(reviewState?.state)) {
       reviewState.state = "review_complete";
@@ -830,9 +1166,7 @@ export async function startServer(options = {}) {
     if (game.turn() !== "w") {
       return { status: 409, body: { error: "It is not White's turn." } };
     }
-    if (session.coach?.enabled && session.coach.live?.state === "playing_waiting_for_coach") {
-      return { status: 409, body: { error: "Coach guidance is pending. Continue without coach first." } };
-    }
+    await expirePendingLiveRequests("board_advanced");
     const fenBefore = game.fen();
     let userMove = null;
     try {
@@ -854,17 +1188,6 @@ export async function startServer(options = {}) {
       fenAfter: game.fen(),
       at: new Date().toISOString(),
     });
-    if (session.coach?.live) {
-      session.coach.live = {
-        ...session.coach.live,
-        state: "playing_ready",
-        requestId: null,
-        requestedAt: null,
-        fen: null,
-        card: null,
-        bypassedAt: null,
-      };
-    }
     await appendEvent(dataRoot, "user_move", { gameId: session.gameId, uci: userUci, san: userMove.san });
 
     if (!game.isGameOver()) {
@@ -894,41 +1217,80 @@ export async function startServer(options = {}) {
     }
 
     await saveGameIfDone();
-    if (!game.isGameOver() && game.turn() === "w") {
-      await createLiveCoachRequest();
-    }
+    updateLiveStatus();
     await persistSession();
     return { status: 200, body: serializeSession(session, game, profile) };
   }
 
-  async function handleHint(body) {
+  async function handleCoachMessage(body) {
     await syncRelayReplies();
-    const level = ["nudge", "direction", "reveal"].includes(body.level) ? body.level : "nudge";
+    const text = String(body.text || "").trim();
+    if (!text) {
+      return { status: 400, body: { error: "Expected a coach message." } };
+    }
+    if (text.length > 500) {
+      return { status: 400, body: { error: "Coach message is too long." } };
+    }
     if (game.isGameOver()) {
-      return { status: 200, body: { level, text: "The game is over. Start the review.", analysis: null } };
+      return { status: 409, body: { error: "The game is over. Start the review." } };
     }
     if (game.turn() !== "w") {
-      return { status: 200, body: { level, text: "Wait for Maia's move to finish.", analysis: null } };
+      return { status: 409, body: { error: "Wait for Maia's move to finish." } };
     }
-    const request = await createLiveCoachRequest({ type: "chess.followup", helpLevel: level });
-    if (request) {
-      await persistSession();
-      return { status: 200, body: serializeSession(session, game, profile) };
+    const live = session.coach.live;
+    const meta = currentTurnMeta(session, game);
+    const mapped = mapCoachIntent(text, meta);
+    const needsFollowupBudget = !mapped.revealAllowed;
+    if (needsFollowupBudget && live.usage.followups >= live.budget.followupsMax) {
+      return { status: 429, body: { error: "No coach questions remain for this game." } };
     }
+    if (mapped.revealAllowed && live.usage.reveals >= live.budget.revealsMax) {
+      return { status: 429, body: { error: "No reveal requests remain for this game." } };
+    }
+
+    appendLiveTranscript({
+      role: "user",
+      text,
+      requestId: null,
+      turnId: meta.turnId,
+      fenHash: meta.fenHash,
+      ply: meta.ply,
+      sideToMove: meta.sideToMove,
+      ladderStep: mapped.ladderStep,
+    });
+    if (mapped.revealAllowed) live.usage.reveals += 1;
+    else live.usage.followups += 1;
+
     const analysis = await analyzeFen(game.fen(), { depth: Number(process.env.CHESS_HINT_DEPTH || 7), multipv: 2 });
-    const theme = classifyBestMove(game, analysis.bestmove);
-    const hint = {
-      id: timestampId("hint"),
-      gameId: session.gameId,
-      at: new Date().toISOString(),
-      level,
-      theme,
-      text: hintText(level, theme, analysis),
-    };
-    session.hints.push(hint);
-    await appendEvent(dataRoot, "hint_requested", { gameId: session.gameId, level, theme });
+    const request = await createCoachMessageRequest({
+      text,
+      intent: mapped.intent,
+      ladderStep: mapped.ladderStep,
+      revealAllowed: mapped.revealAllowed,
+      meta,
+      analysis,
+    });
+    if (!request) {
+      appendLiveTranscript({
+        role: "coach",
+        text: localCoachText(mapped.ladderStep, classifyBestMove(game, analysis.bestmove)),
+        requestId: null,
+        turnId: meta.turnId,
+        fenHash: meta.fenHash,
+        ply: meta.ply,
+        sideToMove: meta.sideToMove,
+        ladderStep: mapped.ladderStep,
+      });
+      live.usage.visibleMessages += 1;
+      updateLiveStatus("ready", null);
+      await appendEvent(dataRoot, "coach_message_local", {
+        gameId: session.gameId,
+        intent: mapped.intent,
+        ladderStep: mapped.ladderStep,
+      });
+    }
     await persistSession();
-    return { status: 200, body: { ...hint, reveal: level === "reveal" ? analysis : undefined } };
+    return { status: 200, body: serializeSession(session, game, profile) };
   }
 
   async function handleReview() {
@@ -986,20 +1348,6 @@ export async function startServer(options = {}) {
     game = new Chess();
     await appendEvent(dataRoot, "game_started", { gameId: session.gameId, elo });
     await persistSession();
-    return serializeSession(session, game, profile);
-  }
-
-  async function handleCoachBypass() {
-    await syncRelayReplies();
-    if (session.coach?.live?.state === "playing_waiting_for_coach") {
-      session.coach.live.state = "coach_bypassed";
-      session.coach.live.bypassedAt = new Date().toISOString();
-      await appendEvent(dataRoot, "coach_bypassed", {
-        gameId: session.gameId,
-        requestId: session.coach.live.requestId,
-      });
-      await persistSession();
-    }
     return serializeSession(session, game, profile);
   }
 
@@ -1096,12 +1444,14 @@ export async function startServer(options = {}) {
         const result = await handleMove(await parseBody(req));
         jsonResponse(res, result.status, result.body);
       } else if (req.method === "POST" && url.pathname === "/api/hint") {
-        const result = await handleHint(await parseBody(req));
+        jsonResponse(res, 410, LEGACY_LIVE_ERROR);
+      } else if (req.method === "POST" && url.pathname === "/api/coach/message") {
+        const result = await handleCoachMessage(await parseBody(req));
         jsonResponse(res, result.status, result.body);
       } else if (req.method === "POST" && url.pathname === "/api/review") {
         jsonResponse(res, 200, await handleReview());
       } else if (req.method === "POST" && url.pathname === "/api/coach/bypass") {
-        jsonResponse(res, 200, await handleCoachBypass());
+        jsonResponse(res, 410, LEGACY_LIVE_ERROR);
       } else if (req.method === "POST" && url.pathname === "/api/review/select") {
         jsonResponse(res, 200, await handleReviewSelect(await parseBody(req)));
       } else if (req.method === "POST" && url.pathname === "/api/review/feedback") {

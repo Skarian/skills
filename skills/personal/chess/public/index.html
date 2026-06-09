@@ -37,17 +37,16 @@
           </div>
         </div>
         <section class="coach">
-          <h2>Coach</h2>
+          <header class="section-header">
+            <h2>Coach</h2>
+            <span id="coach-remaining">3 left</span>
+          </header>
           <p id="coach-state" class="coach-state">Ready.</p>
-          <div class="hint-actions">
-            <button id="hint-nudge" type="button">Nudge</button>
-            <button id="hint-direction" type="button">Direction</button>
-            <button id="hint-reveal" type="button">Reveal</button>
-          </div>
-          <article id="coach-card" class="coach-card">
-            <p id="hint-text">Ready.</p>
-          </article>
-          <button id="coach-bypass" class="coach-bypass" type="button" hidden>Continue without coach</button>
+          <div id="coach-transcript" class="coach-transcript" aria-live="polite"></div>
+          <form id="coach-form" class="coach-form">
+            <input id="coach-input" type="text" autocomplete="off" placeholder="Ask the coach">
+            <button id="coach-send" type="submit">Send</button>
+          </form>
         </section>
         <section id="review-panel" class="review-panel" hidden>
           <header class="section-header">

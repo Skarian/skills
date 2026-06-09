@@ -32,6 +32,21 @@ async function waitForState(baseUrl, predicate, label) {
   throw new Error(`${label}: ${JSON.stringify(state)}`);
 }
 
+function assertNoLivePacketLeak(payload) {
+  if (!payload?.request || !payload.position || !payload.analysis || !payload.constraints) {
+    throw new Error(`Live packet is missing compact sections: ${JSON.stringify(payload)}`);
+  }
+  if (Object.hasOwn(payload, "data")) {
+    throw new Error(`Live packet used old data wrapper: ${JSON.stringify(payload)}`);
+  }
+  const text = JSON.stringify(payload).toLowerCase();
+  for (const forbidden of ["pgn", "bestmove", "best move", "principal variation", "\"pv\"", "raw", "\"profile\""]) {
+    if (text.includes(forbidden)) {
+      throw new Error(`Live packet leaked ${forbidden}: ${JSON.stringify(payload)}`);
+    }
+  }
+}
+
 const dataRoot = await mkdtemp(path.join(os.tmpdir(), "chess-skill-smoke-"));
 const app = await startServer({ dataRoot, relayEnabled: false, maiaStub: true, stockfishStub: true, port: 0, quiet: true });
 
@@ -52,9 +67,19 @@ try {
     throw new Error(`Illegal move was not cleanly rejected: ${JSON.stringify(illegal.data)}`);
   }
 
-  const hint = await post(`${app.url}api/hint`, { level: "nudge" });
-  if (!hint.response.ok || !hint.data.text) {
-    throw new Error(`Hint failed: ${JSON.stringify(hint.data)}`);
+  const coach = await post(`${app.url}api/coach/message`, { text: "stuck" });
+  if (!coach.response.ok || coach.data.coach.live.transcript.filter((entry) => entry.role === "coach").length !== 1) {
+    throw new Error(`Local coach fallback failed: ${JSON.stringify(coach.data.coach?.live)}`);
+  }
+
+  const legacyHint = await post(`${app.url}api/hint`, { level: "nudge" });
+  if (legacyHint.response.status !== 410) {
+    throw new Error(`Legacy hint endpoint did not return 410: ${JSON.stringify(legacyHint.data)}`);
+  }
+
+  const legacyBypass = await post(`${app.url}api/coach/bypass`, {});
+  if (legacyBypass.response.status !== 410) {
+    throw new Error(`Legacy bypass endpoint did not return 410: ${JSON.stringify(legacyBypass.data)}`);
   }
 
   const review = await post(`${app.url}api/review`, {});
@@ -95,6 +120,22 @@ function replyTo(requestId, payload) {
   });
 }
 
+function agentMessages() {
+  const relay = relayStore.findOpenRelay();
+  return relayStore.pollEvents({
+    relayId: relay.relayId,
+    client: "agent",
+    cursor: 0,
+    types: ["relay.message"],
+    limit: 100,
+  });
+}
+
+function latestAgentMessage() {
+  const messages = agentMessages();
+  return messages[messages.length - 1];
+}
+
 try {
   relayApp = await startServer({
     dataRoot: relayDataRoot,
@@ -107,63 +148,82 @@ try {
     quiet: true,
   });
 
-  const legal = await post(`${relayApp.url}api/move`, { uci: "e2e4" });
-  if (!legal.response.ok || legal.data.coach.live.state !== "playing_waiting_for_coach") {
-    throw new Error(`Relay coach request was not created: ${JSON.stringify(legal.data.coach)}`);
+  const firstChat = await post(`${relayApp.url}api/coach/message`, { text: "stuck" });
+  if (!firstChat.response.ok || firstChat.data.coach.live.state !== "pending") {
+    throw new Error(`Chat request did not create pending state: ${JSON.stringify(firstChat.data.coach?.live)}`);
   }
-  const liveRequestId = legal.data.coach.live.requestId;
-  const relay = relayStore.findOpenRelay();
-  const liveMessages = relayStore.pollEvents({
-    relayId: relay.relayId,
-    client: "agent",
-    cursor: 0,
-    types: ["relay.message"],
+  const firstRequestId = Object.keys(firstChat.data.coach.live.pendingRequests)[0];
+  const firstPacket = latestAgentMessage()?.payload;
+  if (latestAgentMessage()?.payload?.kind !== "chess.live_coach") {
+    throw new Error(`Relay message was not a live coach packet: ${JSON.stringify(latestAgentMessage()?.payload)}`);
+  }
+  assertNoLivePacketLeak(firstPacket);
+
+  const legalWhilePending = await post(`${relayApp.url}api/move`, { uci: "e2e4" });
+  if (!legalWhilePending.response.ok || legalWhilePending.data.history.length !== 2) {
+    throw new Error(`Move was blocked while coach was pending: ${JSON.stringify(legalWhilePending.data)}`);
+  }
+
+  replyTo(firstRequestId, { message: "This stale reply should not render." });
+  await waitForState(
+    relayApp.url,
+    (state) => !state.coach.live.transcript.some((entry) => entry.text === "This stale reply should not render."),
+    "Stale reply rendered",
+  );
+
+  const cardChat = await post(`${relayApp.url}api/coach/message`, { text: "more" });
+  if (!cardChat.response.ok) {
+    throw new Error(`Second chat request failed: ${JSON.stringify(cardChat.data)}`);
+  }
+  const cardRequestId = Object.keys(cardChat.data.coach.live.pendingRequests).find((id) => cardChat.data.coach.live.pendingRequests[id].status === "pending");
+  replyTo(cardRequestId, {
+    title: "Old Card",
+    bodyMarkdown: "This old card payload should not render.",
+    actions: [],
   });
-  if (!liveMessages[0]?.payload?.markdown || liveMessages[0].payload.kind !== "chess.live_coach") {
-    throw new Error(`Relay message was not a markdown coach packet: ${JSON.stringify(liveMessages[0]?.payload)}`);
+  await waitForState(
+    relayApp.url,
+    (state) => state.coach.live.status.kind === "filtered" &&
+      !state.coach.live.transcript.some((entry) => entry.text === "This old card payload should not render."),
+    "Old card payload was not rejected",
+  );
+
+  const validChat = await post(`${relayApp.url}api/coach/message`, { text: "why" });
+  if (!validChat.response.ok) {
+    throw new Error(`Valid chat request failed: ${JSON.stringify(validChat.data)}`);
   }
-
-  const blocked = await post(`${relayApp.url}api/move`, { uci: "f2f3" });
-  if (blocked.response.ok || blocked.response.status !== 409) {
-    throw new Error(`Move was not blocked while coach was pending: ${JSON.stringify(blocked.data)}`);
-  }
-
-  const bypassed = await post(`${relayApp.url}api/coach/bypass`, {});
-  if (!bypassed.response.ok || bypassed.data.coach.live.state !== "coach_bypassed") {
-    throw new Error(`Coach bypass failed: ${JSON.stringify(bypassed.data.coach)}`);
-  }
-
-  const secondMove = await post(`${relayApp.url}api/move`, { uci: "f2f3" });
-  if (!secondMove.response.ok || secondMove.data.coach.live.state !== "playing_waiting_for_coach") {
-    throw new Error(`Second coach request was not created: ${JSON.stringify(secondMove.data.coach)}`);
-  }
-
-  replyTo(liveRequestId, {
-      schemaVersion: 1,
-      requestId: liveRequestId,
-      mode: "live",
-      title: "Old Card",
-      bodyMarkdown: "This bypassed reply should not render.",
-      priority: "normal",
-      staleIfFenChanged: true,
-  });
-
-  const currentLiveRequestId = secondMove.data.coach.live.requestId;
-  replyTo(currentLiveRequestId, {
-      schemaVersion: 1,
-      requestId: currentLiveRequestId,
-      mode: "live",
-      title: "Coach",
-      bodyMarkdown: "Develop calmly and check Black's direct threat.",
-      priority: "normal",
-      staleIfFenChanged: true,
-      conceptTags: ["development"],
-  });
-
+  const validRequestId = Object.keys(validChat.data.coach.live.pendingRequests).find((id) => validChat.data.coach.live.pendingRequests[id].status === "pending");
+  replyTo(validRequestId, { message: "What threat did Black create, and which forcing move addresses it?" });
   const coached = await waitForState(
     relayApp.url,
-    (state) => state.coach.live.state === "playing_ready" && state.coach.live.card?.title === "Coach",
-    "Coach reply was not synced",
+    (state) => state.coach.live.transcript.some((entry) => entry.role === "coach" && entry.text.includes("What threat")),
+    "Valid coach reply was not displayed",
+  );
+
+  await post(`${relayApp.url}api/new-game`, {});
+  const emptyChat = await post(`${relayApp.url}api/coach/message`, { text: "stuck" });
+  const emptyRequestId = Object.keys(emptyChat.data.coach.live.pendingRequests)[0];
+  replyTo(emptyRequestId, { message: "" });
+  await waitForState(
+    relayApp.url,
+    (state) => state.coach.live.transcript.filter((entry) => entry.role === "coach").length === 0,
+    "Empty coach reply displayed a transcript item",
+  );
+
+  const revealDenied = await post(`${relayApp.url}api/coach/message`, { text: "reveal" });
+  if (!revealDenied.response.ok) {
+    throw new Error(`Reveal gate request failed: ${JSON.stringify(revealDenied.data)}`);
+  }
+  const revealPacket = latestAgentMessage().payload;
+  if (revealPacket.request.revealPermission || revealPacket.request.ladderStep === "gated_reveal") {
+    throw new Error(`Reveal was allowed too early: ${JSON.stringify(revealPacket.request)}`);
+  }
+  const revealRequestId = Object.keys(revealDenied.data.coach.live.pendingRequests).find((id) => revealDenied.data.coach.live.pendingRequests[id].status === "pending");
+  replyTo(revealRequestId, { message: "" });
+  await waitForState(
+    relayApp.url,
+    (state) => !state.coach.live.pendingRequests[revealRequestId],
+    "Reveal-denied request did not clear",
   );
 
   const reviewState = await post(`${relayApp.url}api/review`, {});
@@ -172,26 +232,26 @@ try {
   }
   const planRequestId = reviewState.data.coach.review.planRequestId;
   replyTo(planRequestId, {
-      schemaVersion: 1,
-      requestId: planRequestId,
-      mode: "review_plan",
-      title: "Review Plan",
-      bodyMarkdown: "Review the first loose move.",
+    schemaVersion: 1,
+    requestId: planRequestId,
+    mode: "review_plan",
+    title: "Review Plan",
+    bodyMarkdown: "Review the first loose move.",
+    priority: "normal",
+    staleIfFenChanged: false,
+    reviewItems: [{
+      ply: 1,
+      uci: "e2e4",
+      san: "e4",
+      title: "Opening baseline",
+      reason: "Use the first move to test card generation.",
       priority: "normal",
-      staleIfFenChanged: false,
-      reviewItems: [{
-        ply: 1,
-        uci: "e2e4",
-        san: "e4",
-        title: "Opening baseline",
-        reason: "Use the first move to test card generation.",
-        priority: "normal",
-        conceptTags: ["opening"],
-      }],
-      levelRecommendation: {
-        nextMaiaElo: 700,
-        rationale: "Smoke-test recommendation.",
-      },
+      conceptTags: ["opening"],
+    }],
+    levelRecommendation: {
+      nextMaiaElo: 700,
+      rationale: "Smoke-test recommendation.",
+    },
   });
 
   const planned = await waitForState(
@@ -201,14 +261,14 @@ try {
   );
   const reviewItem = planned.coach.review.items[0];
   replyTo(reviewItem.requestId, {
-      schemaVersion: 1,
-      requestId: reviewItem.requestId,
-      mode: "review_card",
-      title: "Opening baseline",
-      bodyMarkdown: "This card explains the selected review item.",
-      priority: "normal",
-      staleIfFenChanged: false,
-      conceptTags: ["opening"],
+    schemaVersion: 1,
+    requestId: reviewItem.requestId,
+    mode: "review_card",
+    title: "Opening baseline",
+    bodyMarkdown: "This card explains the selected review item.",
+    priority: "normal",
+    staleIfFenChanged: false,
+    conceptTags: ["opening"],
   });
 
   const cardReady = await waitForState(
@@ -228,8 +288,8 @@ try {
   }
 
   await post(`${relayApp.url}api/new-game`, {});
-  const closePending = await post(`${relayApp.url}api/move`, { uci: "e2e4" });
-  if (!closePending.response.ok || closePending.data.coach.live.state !== "playing_waiting_for_coach") {
+  const closePending = await post(`${relayApp.url}api/coach/message`, { text: "stuck" });
+  if (!closePending.response.ok || closePending.data.coach.live.state !== "pending") {
     throw new Error(`Close recovery setup failed: ${JSON.stringify(closePending.data.coach.live)}`);
   }
   relayStore.closeRelay({
@@ -238,12 +298,12 @@ try {
   });
   await waitForState(
     relayApp.url,
-    (state) => !state.coach.enabled && state.coach.live.state === "playing_ready",
-    "Relay close did not unblock live play",
+    (state) => !state.coach.enabled && state.coach.live.state === "disabled",
+    "Relay close did not disable live coach",
   );
-  const unblockedMove = await post(`${relayApp.url}api/move`, { uci: "f2f3" });
+  const unblockedMove = await post(`${relayApp.url}api/move`, { uci: "e2e4" });
   if (!unblockedMove.response.ok) {
-    throw new Error(`Move stayed blocked after Relay close: ${JSON.stringify(unblockedMove.data)}`);
+    throw new Error(`Move failed after Relay close: ${JSON.stringify(unblockedMove.data)}`);
   }
   const relaySession = JSON.parse(await readFile(path.join(relayDataRoot, "sessions", "current.json"), "utf8"));
   if (Object.hasOwn(relaySession.coach || {}, "replyAfter")) {
@@ -252,7 +312,7 @@ try {
 
   console.log(JSON.stringify({
     ok: true,
-    gameId: cardReady.gameId,
+    gameId: cardReady.gameId || coached.gameId,
     relayAppName,
     cleaned: true,
   }, null, 2));

@@ -15,9 +15,11 @@ const els = {
   maia: document.getElementById("maia"),
   moves: document.getElementById("moves"),
   coachState: document.getElementById("coach-state"),
-  coachCard: document.getElementById("coach-card"),
-  coachBypass: document.getElementById("coach-bypass"),
-  hintText: document.getElementById("hint-text"),
+  coachRemaining: document.getElementById("coach-remaining"),
+  coachTranscript: document.getElementById("coach-transcript"),
+  coachForm: document.getElementById("coach-form"),
+  coachInput: document.getElementById("coach-input"),
+  coachSend: document.getElementById("coach-send"),
   reviewPanel: document.getElementById("review-panel"),
   reviewStatus: document.getElementById("review-status"),
   reviewCard: document.getElementById("review-card"),
@@ -29,9 +31,6 @@ const els = {
   levelText: document.getElementById("level-text"),
   acceptLevel: document.getElementById("accept-level"),
   reviewPath: document.getElementById("review-path"),
-  nudge: document.getElementById("hint-nudge"),
-  direction: document.getElementById("hint-direction"),
-  reveal: document.getElementById("hint-reveal"),
   review: document.getElementById("review"),
   newGame: document.getElementById("new-game"),
 };
@@ -41,7 +40,6 @@ let state = null;
 let busy = false;
 let pendingPromotion = null;
 let polling = null;
-let bypassTimer = null;
 
 const board = new Chessboard(els.board, {
   position: FEN.start,
@@ -107,15 +105,15 @@ function renderMarkdown(target, markdown) {
 }
 
 function liveCoachState() {
-  return state?.coach?.live?.state || "playing_ready";
+  return state?.coach?.live?.state || "ready";
 }
 
 function reviewCoachState() {
   return state?.coach?.review?.state || "idle";
 }
 
-function isWaitingForCoach() {
-  return state?.coach?.enabled && liveCoachState() === "playing_waiting_for_coach";
+function hasPendingCoach() {
+  return Object.values(state?.coach?.live?.pendingRequests || {}).some((request) => request.status === "pending");
 }
 
 function isReviewPending() {
@@ -125,7 +123,7 @@ function isReviewPending() {
 }
 
 function shouldPoll() {
-  return isWaitingForCoach() || isReviewPending();
+  return hasPendingCoach() || isReviewPending();
 }
 
 function clearMoveMarkers() {
@@ -134,7 +132,7 @@ function clearMoveMarkers() {
 }
 
 function legalMovesFrom(square) {
-  if (!square || busy || pendingPromotion || isWaitingForCoach() || localGame.turn() !== "w") {
+  if (!square || busy || pendingPromotion || localGame.turn() !== "w") {
     return [];
   }
   try {
@@ -181,13 +179,13 @@ function setMoveInputEnabled(enabled) {
 
 function updateButtons() {
   const gameOver = state?.status?.gameOver;
-  const waitingForCoach = isWaitingForCoach();
-  const disablePlay = busy || gameOver || waitingForCoach;
-  for (const button of [els.nudge, els.direction, els.reveal, els.review, els.newGame]) {
+  const disablePlay = busy || gameOver;
+  for (const button of [els.review, els.newGame]) {
     button.disabled = busy || Boolean(pendingPromotion);
   }
   els.review.disabled = busy || Boolean(pendingPromotion) || !gameOver;
-  els.coachBypass.disabled = busy || !waitingForCoach;
+  els.coachInput.disabled = busy || Boolean(pendingPromotion) || gameOver;
+  els.coachSend.disabled = busy || Boolean(pendingPromotion) || gameOver;
   els.reviewPrev.disabled = busy || !state?.coach?.review?.items?.length || (state.coach.review.currentIndex || 0) <= 0;
   els.reviewNext.disabled = busy || !state?.coach?.review?.items?.length ||
     (state.coach.review.currentIndex || 0) >= state.coach.review.items.length - 1;
@@ -208,48 +206,47 @@ function currentReviewItem() {
   return review.items[review.currentIndex || 0] || null;
 }
 
-function bypassReady() {
-  const live = state?.coach?.live;
-  if (!live?.requestedAt) return false;
-  return Date.now() - Date.parse(live.requestedAt) >= (live.bypassAvailableAfterMs || 20000);
-}
-
-function scheduleBypassRefresh() {
-  window.clearTimeout(bypassTimer);
-  const live = state?.coach?.live;
-  if (!isWaitingForCoach() || !live?.requestedAt || bypassReady()) return;
-  const delay = Math.max(0, (live.bypassAvailableAfterMs || 20000) - (Date.now() - Date.parse(live.requestedAt)));
-  bypassTimer = window.setTimeout(() => {
-    renderCoach();
-    updateButtons();
-  }, delay + 25);
+function setCoachStatus(text) {
+  els.coachState.textContent = text;
 }
 
 function renderCoach() {
   const live = state?.coach?.live;
-  const waiting = isWaitingForCoach();
-  els.coachBypass.hidden = !(waiting && bypassReady());
+  const budget = live?.budget || {};
+  const usage = live?.usage || {};
+  const remaining = Math.max(0, Number(budget.followupsMax || 0) - Number(usage.followups || 0));
+  const reveals = Math.max(0, Number(budget.revealsMax || 0) - Number(usage.reveals || 0));
+  els.coachRemaining.textContent = `${remaining} questions, ${reveals} reveal`;
+
+  const pendingCount = Object.values(live?.pendingRequests || {}).filter((request) => request.status === "pending").length;
   if (!state?.coach?.enabled) {
-    els.coachState.textContent = "Local hints";
+    setCoachStatus("Local coach");
+  } else if (pendingCount) {
+    setCoachStatus(`Coach pending (${pendingCount})`);
+  } else if (live?.status?.kind === "expired") {
+    setCoachStatus("Previous reply expired");
+  } else if (live?.status?.kind === "filtered") {
+    setCoachStatus("Previous reply filtered");
+  } else {
+    setCoachStatus("Ready");
+  }
+
+  els.coachTranscript.replaceChildren();
+  const transcript = live?.transcript || [];
+  if (!transcript.length) {
+    const empty = document.createElement("p");
+    empty.className = "coach-empty";
+    empty.textContent = "Ask when you want help.";
+    els.coachTranscript.append(empty);
     return;
   }
-  if (waiting) {
-    els.coachState.textContent = "Coach is thinking";
-    renderMarkdown(els.hintText, "Preparing guidance for this position.");
-    scheduleBypassRefresh();
-    return;
+  for (const item of transcript) {
+    const message = document.createElement("div");
+    message.className = `coach-message ${item.role === "user" ? "user" : "coach"}`;
+    message.textContent = item.text || "";
+    els.coachTranscript.append(message);
   }
-  if (liveCoachState() === "coach_bypassed") {
-    els.coachState.textContent = "Coach bypassed";
-    renderMarkdown(els.hintText, "You can move without waiting for this coach card.");
-    return;
-  }
-  if (live?.card) {
-    els.coachState.textContent = live.card.title || "Coach";
-    renderMarkdown(els.hintText, live.card.bodyMarkdown);
-    return;
-  }
-  els.coachState.textContent = "Ready";
+  els.coachTranscript.scrollTop = els.coachTranscript.scrollHeight;
 }
 
 function renderReview() {
@@ -302,7 +299,7 @@ function updatePolling() {
   if (shouldPoll() && !polling) {
     polling = window.setInterval(() => {
       refresh().catch((error) => {
-        els.hintText.textContent = error.message;
+        setCoachStatus(error.message);
       });
     }, 1500);
   } else if (!shouldPoll() && polling) {
@@ -348,7 +345,7 @@ function requestPromotion(from, to) {
   pendingPromotion = { from, to };
   clearMoveMarkers();
   updateButtons();
-  els.hintText.textContent = "Choose promotion piece.";
+  setCoachStatus("Choose promotion piece.");
   board.showPromotionDialog(to, COLOR.white, (result) => {
     const request = pendingPromotion;
     pendingPromotion = null;
@@ -356,7 +353,7 @@ function requestPromotion(from, to) {
       const promotion = result.piece.charAt(1);
       submitMove(request.from, request.to, promotion);
     } else {
-      els.hintText.textContent = "Promotion canceled.";
+      setCoachStatus("Promotion canceled.");
       refresh();
     }
   });
@@ -393,23 +390,21 @@ function inputHandler(event) {
 async function submitMove(from, to, promotion = null) {
   const move = legalMoveFor(from, to, promotion);
   if (!move) {
-    els.hintText.textContent = "Illegal move.";
+    setCoachStatus("Illegal move.");
     await refresh();
     return;
   }
   busy = true;
   updateButtons();
-  els.hintText.textContent = "Maia is thinking.";
+  setCoachStatus("Maia is thinking.");
   try {
     const next = await api("/api/move", { uci: `${from}${to}${move.promotion || ""}` });
     await render(next);
     if (next.status.gameOver) {
-      renderMarkdown(els.hintText, "Game complete. Start the review.");
-    } else if (!isWaitingForCoach() && !next.coach?.live?.card) {
-      renderMarkdown(els.hintText, "Ready.");
+      setCoachStatus("Game complete. Start the review.");
     }
   } catch (error) {
-    els.hintText.textContent = error.message;
+    setCoachStatus(error.message);
     await refresh();
   } finally {
     busy = false;
@@ -417,20 +412,17 @@ async function submitMove(from, to, promotion = null) {
   }
 }
 
-async function requestHint(level) {
+async function sendCoachMessage(event) {
+  event.preventDefault();
+  const text = els.coachInput.value.trim();
+  if (!text) return;
   busy = true;
   updateButtons();
   try {
-    const result = await api("/api/hint", { level });
-    if (result.fen) {
-      await render(result, false);
-    } else {
-      renderMarkdown(els.hintText, result.text);
-      const next = await api("/api/state");
-      await render(next, false);
-    }
+    els.coachInput.value = "";
+    await render(await api("/api/coach/message", { text }), false);
   } catch (error) {
-    els.hintText.textContent = error.message;
+    setCoachStatus(error.message);
   } finally {
     busy = false;
     updateButtons();
@@ -440,19 +432,19 @@ async function requestHint(level) {
 async function requestReview() {
   busy = true;
   updateButtons();
-  els.hintText.textContent = "Reviewing.";
+  setCoachStatus("Reviewing.");
   try {
     const result = await api("/api/review", {});
     if (result.fen) {
       await render(result, false);
-      renderMarkdown(els.hintText, "Review started.");
+      setCoachStatus("Review started.");
     } else {
-      renderMarkdown(els.hintText, `Review written. Severe errors: ${result.summary.severeErrorCount}.`);
+      setCoachStatus(`Review written. Severe errors: ${result.summary.severeErrorCount}.`);
       const next = await api("/api/state");
       await render(next, false);
     }
   } catch (error) {
-    els.hintText.textContent = error.message;
+    setCoachStatus(error.message);
   } finally {
     busy = false;
     updateButtons();
@@ -464,22 +456,9 @@ async function newGame() {
   updateButtons();
   try {
     await render(await api("/api/new-game", {}));
-    els.hintText.textContent = "Ready.";
+    setCoachStatus("Ready.");
   } catch (error) {
-    els.hintText.textContent = error.message;
-  } finally {
-    busy = false;
-    updateButtons();
-  }
-}
-
-async function bypassCoach() {
-  busy = true;
-  updateButtons();
-  try {
-    await render(await api("/api/coach/bypass", {}), false);
-  } catch (error) {
-    els.hintText.textContent = error.message;
+    setCoachStatus(error.message);
   } finally {
     busy = false;
     updateButtons();
@@ -492,7 +471,7 @@ async function selectReview(index) {
   try {
     await render(await api("/api/review/select", { index }), false);
   } catch (error) {
-    els.hintText.textContent = error.message;
+    setCoachStatus(error.message);
   } finally {
     busy = false;
     updateButtons();
@@ -508,7 +487,7 @@ async function sendReviewFeedback(value) {
       value,
     }), false);
   } catch (error) {
-    els.hintText.textContent = error.message;
+    setCoachStatus(error.message);
   } finally {
     busy = false;
     updateButtons();
@@ -521,7 +500,7 @@ async function acceptLevel() {
   try {
     await render(await api("/api/review/accept-level", {}), false);
   } catch (error) {
-    els.hintText.textContent = error.message;
+    setCoachStatus(error.message);
   } finally {
     busy = false;
     updateButtons();
@@ -532,12 +511,9 @@ async function refresh() {
   await render(await api("/api/state"), false);
 }
 
-els.nudge.addEventListener("click", () => requestHint("nudge"));
-els.direction.addEventListener("click", () => requestHint("direction"));
-els.reveal.addEventListener("click", () => requestHint("reveal"));
+els.coachForm.addEventListener("submit", sendCoachMessage);
 els.review.addEventListener("click", requestReview);
 els.newGame.addEventListener("click", newGame);
-els.coachBypass.addEventListener("click", bypassCoach);
 els.reviewPrev.addEventListener("click", () => selectReview((state?.coach?.review?.currentIndex || 0) - 1));
 els.reviewNext.addEventListener("click", () => selectReview((state?.coach?.review?.currentIndex || 0) + 1));
 els.reviewGotIt.addEventListener("click", () => sendReviewFeedback("got_it"));
@@ -545,5 +521,5 @@ els.reviewConfused.addEventListener("click", () => sendReviewFeedback("still_con
 els.acceptLevel.addEventListener("click", acceptLevel);
 
 refresh().catch((error) => {
-  els.hintText.textContent = error.message;
+  setCoachStatus(error.message);
 });
