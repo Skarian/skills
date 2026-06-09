@@ -115,7 +115,7 @@ function createGameFromMoves(uciMoves) {
   return game;
 }
 
-function serializeSession(session, game, profile) {
+function serializeSession(session, game, profile, { publicCoach = true } = {}) {
   return {
     gameId: session.gameId,
     startedAt: session.startedAt,
@@ -133,7 +133,7 @@ function serializeSession(session, game, profile) {
     plies: session.plies,
     hints: session.hints,
     review: session.review,
-    coach: session.coach || defaultCoachState(),
+    coach: publicCoach ? publicCoachState(session.coach || defaultCoachState()) : (session.coach || defaultCoachState()),
     status: gameStatus(game),
     profile,
   };
@@ -301,6 +301,7 @@ function defaultLiveState({ enabled = false } = {}) {
       reveals: 0,
       visibleMessages: 0,
     },
+    trace: [],
     status: {
       kind: enabled ? "ready" : "disabled",
       requestId: null,
@@ -323,6 +324,7 @@ function normalizeLiveState(live, { enabled = false } = {}) {
     reveals: Number(existing.usage?.reveals || 0),
     visibleMessages: Number(existing.usage?.visibleMessages || 0),
   };
+  next.trace = Array.isArray(existing.trace) ? existing.trace.slice(-80) : [];
   next.status = {
     ...next.status,
     ...(isPlainObject(existing.status) ? existing.status : {}),
@@ -332,6 +334,41 @@ function normalizeLiveState(live, { enabled = false } = {}) {
     : "disabled";
   if (!enabled) next.status.kind = "disabled";
   return next;
+}
+
+function publicCoachState(coach) {
+  const live = normalizeLiveState(coach?.live, { enabled: Boolean(coach?.enabled) });
+  live.pendingRequests = Object.fromEntries(Object.entries(live.pendingRequests || {}).map(([requestId, request]) => [requestId, {
+    requestId: request.requestId,
+    kind: request.kind,
+    sentAt: request.sentAt,
+    turnId: request.turnId,
+    fenHash: request.fenHash,
+    ply: request.ply,
+    sideToMove: request.sideToMove,
+    userText: request.userText,
+    intent: request.intent,
+    ladderStep: request.ladderStep,
+    revealAllowed: Boolean(request.revealAllowed),
+    maxWords: request.maxWords,
+    status: request.status,
+    staleReason: request.staleReason || null,
+    staleAt: request.staleAt || null,
+  }]));
+  live.trace = (live.trace || []).map((entry) => ({
+    id: entry.id,
+    at: entry.at,
+    type: entry.type,
+    requestId: entry.requestId || null,
+    turnId: entry.turnId || null,
+    ladderStep: entry.ladderStep || null,
+    status: entry.status || null,
+    reason: entry.reason || null,
+  }));
+  return {
+    ...coach,
+    live,
+  };
 }
 
 function defaultCoachState({ enabled = false, relayAppName = "chess" } = {}) {
@@ -453,7 +490,7 @@ export async function startServer(options = {}) {
   const stockfishStub = options.stockfishStub ?? process.env.CHESS_STOCKFISH_STUB === "1";
 
   async function persistSession() {
-    await writeJson(paths.currentSession, serializeSession(session, game, profile));
+    await writeJson(paths.currentSession, serializeSession(session, game, profile, { publicCoach: false }));
   }
 
   async function saveGameIfDone() {
@@ -573,6 +610,53 @@ export async function startServer(options = {}) {
     }].slice(-40);
   }
 
+  function appendLiveTrace(entry) {
+    const live = session.coach.live;
+    live.trace = [...(live.trace || []), {
+      id: timestampId("coach-trace"),
+      at: new Date().toISOString(),
+      ...entry,
+    }].slice(-80);
+  }
+
+  function liveTracePayload() {
+    const live = session.coach?.live || defaultLiveState();
+    const trace = live.trace || [];
+    return {
+      transcript: (live.transcript || []).map((entry) => ({
+        role: entry.role,
+        text: entry.text,
+        at: entry.at,
+        turnId: entry.turnId,
+        fenHash: entry.fenHash,
+        ply: entry.ply,
+        sideToMove: entry.sideToMove,
+        requestId: entry.requestId || null,
+        ladderStep: entry.ladderStep || null,
+      })),
+      usage: live.usage || {},
+      trace: trace.map((entry) => ({
+        type: entry.type,
+        at: entry.at,
+        requestId: entry.requestId || null,
+        turnId: entry.turnId || null,
+        ladderStep: entry.ladderStep || null,
+        status: entry.status || null,
+        reason: entry.reason || null,
+      })),
+      summary: {
+        userMessages: (live.transcript || []).filter((entry) => entry.role === "user").length,
+        visibleCoachMessages: (live.transcript || []).filter((entry) => entry.role === "coach").length,
+        followups: Number(live.usage?.followups || 0),
+        reveals: Number(live.usage?.reveals || 0),
+        staleReplies: trace.filter((entry) => entry.type === "reply_stale").length,
+        expiredRequests: trace.filter((entry) => entry.type === "request_expired").length,
+        filteredReplies: trace.filter((entry) => entry.type === "reply_filtered" || entry.type === "reply_rejected").length,
+        emptyReplies: trace.filter((entry) => entry.type === "reply_empty").length,
+      },
+    };
+  }
+
   function updateLiveStatus(kind = null, requestId = null) {
     const live = session.coach.live;
     const hasPending = Object.values(live.pendingRequests || {}).some((request) => request.status === "pending");
@@ -600,6 +684,14 @@ export async function startServer(options = {}) {
       request.status = "stale";
       request.staleReason = reason;
       request.staleAt = new Date().toISOString();
+      appendLiveTrace({
+        type: "request_expired",
+        requestId: request.requestId,
+        turnId: request.turnId,
+        ladderStep: request.ladderStep,
+        status: "stale",
+        reason,
+      });
       await appendEvent(dataRoot, "coach_reply_expired", {
         gameId: session.gameId,
         requestId: request.requestId,
@@ -776,6 +868,14 @@ export async function startServer(options = {}) {
       privateTerms: privateAnalysisTerms(game, analysis),
       legalTerms: legalMoves.flatMap((move) => [move.san, move.uci]),
     };
+    appendLiveTrace({
+      type: "request_sent",
+      requestId,
+      turnId: meta.turnId,
+      ladderStep,
+      status: "pending",
+      reason: intent,
+    });
     updateLiveStatus("pending", requestId);
     await appendEvent(dataRoot, "coach_message_requested", {
       gameId: session.gameId,
@@ -873,7 +973,7 @@ export async function startServer(options = {}) {
       profile,
       pgn: game.pgn(),
       review,
-      hints: session.hints,
+      liveTrace: liveTracePayload(),
       progressContext: {
         currentMaiaLevel: session.maia.elo,
         result: gameStatus(game),
@@ -949,6 +1049,14 @@ export async function startServer(options = {}) {
       || request.sideToMove !== meta.sideToMove;
     if (stale) {
       updateLiveStatus("expired", requestId);
+      appendLiveTrace({
+        type: "reply_stale",
+        requestId,
+        turnId: request.turnId,
+        ladderStep: request.ladderStep,
+        status: "stale",
+        reason: request.status !== "pending" ? request.status : "board_mismatch",
+      });
       await appendEvent(dataRoot, "coach_reply_stale", {
         gameId: session.gameId,
         requestId,
@@ -961,6 +1069,14 @@ export async function startServer(options = {}) {
     const parsed = parseLiveMessage(payload);
     if (!parsed.ok) {
       updateLiveStatus("filtered", requestId);
+      appendLiveTrace({
+        type: "reply_rejected",
+        requestId,
+        turnId: request.turnId,
+        ladderStep: request.ladderStep,
+        status: "rejected",
+        reason: parsed.reason,
+      });
       await appendEvent(dataRoot, "coach_reply_rejected", {
         gameId: session.gameId,
         requestId,
@@ -971,6 +1087,13 @@ export async function startServer(options = {}) {
 
     if (parsed.message === "") {
       updateLiveStatus(null, null);
+      appendLiveTrace({
+        type: "reply_empty",
+        requestId,
+        turnId: request.turnId,
+        ladderStep: request.ladderStep,
+        status: "empty",
+      });
       await appendEvent(dataRoot, "coach_reply_empty", { gameId: session.gameId, requestId });
       return true;
     }
@@ -978,6 +1101,14 @@ export async function startServer(options = {}) {
     const filtered = filterLiveMessage(request, parsed.message);
     if (!filtered.ok) {
       updateLiveStatus("filtered", requestId);
+      appendLiveTrace({
+        type: "reply_filtered",
+        requestId,
+        turnId: request.turnId,
+        ladderStep: request.ladderStep,
+        status: "filtered",
+        reason: filtered.reason,
+      });
       await appendEvent(dataRoot, "coach_reply_filtered", {
         gameId: session.gameId,
         requestId,
@@ -998,6 +1129,13 @@ export async function startServer(options = {}) {
     });
     live.usage.visibleMessages += 1;
     updateLiveStatus("ready", null);
+    appendLiveTrace({
+      type: "reply_displayed",
+      requestId,
+      turnId: request.turnId,
+      ladderStep: request.ladderStep,
+      status: "displayed",
+    });
     await appendEvent(dataRoot, "coach_message_received", {
       gameId: session.gameId,
       requestId,
@@ -1166,7 +1304,6 @@ export async function startServer(options = {}) {
     if (game.turn() !== "w") {
       return { status: 409, body: { error: "It is not White's turn." } };
     }
-    await expirePendingLiveRequests("board_advanced");
     const fenBefore = game.fen();
     let userMove = null;
     try {
@@ -1177,6 +1314,7 @@ export async function startServer(options = {}) {
     if (!userMove) {
       return { status: 400, body: { error: "Illegal move." } };
     }
+    await expirePendingLiveRequests("board_advanced");
     const userUci = moveToUci(userMove);
     session.uciMoves.push(userUci);
     session.plies.push({
@@ -1283,6 +1421,14 @@ export async function startServer(options = {}) {
       });
       live.usage.visibleMessages += 1;
       updateLiveStatus("ready", null);
+      appendLiveTrace({
+        type: "local_reply",
+        requestId: null,
+        turnId: meta.turnId,
+        ladderStep: mapped.ladderStep,
+        status: "displayed",
+        reason: mapped.intent,
+      });
       await appendEvent(dataRoot, "coach_message_local", {
         gameId: session.gameId,
         intent: mapped.intent,
@@ -1317,6 +1463,7 @@ export async function startServer(options = {}) {
       });
     }
     const severe = moves.filter((move) => move.classification === "severe_error");
+    const liveTrace = liveTracePayload();
     const review = {
       gameId: session.gameId,
       reviewedAt,
@@ -1328,8 +1475,15 @@ export async function startServer(options = {}) {
       summary: {
         userMoveCount: userPlies.length,
         severeErrorCount: severe.length,
-        hintCount: session.hints.length,
+        liveHelpCount: liveTrace.summary.userMessages,
+        visibleCoachMessageCount: liveTrace.summary.visibleCoachMessages,
+        revealCount: liveTrace.summary.reveals,
+        staleReplyCount: liveTrace.summary.staleReplies,
+        expiredRequestCount: liveTrace.summary.expiredRequests,
+        filteredReplyCount: liveTrace.summary.filteredReplies,
+        legacyHintCount: session.hints.length,
       },
+      liveTrace,
     };
     const reviewPath = path.join(paths.reviewsDir, `${session.gameId}.json`);
     await writeJson(reviewPath, review);

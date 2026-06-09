@@ -153,11 +153,33 @@ try {
     throw new Error(`Chat request did not create pending state: ${JSON.stringify(firstChat.data.coach?.live)}`);
   }
   const firstRequestId = Object.keys(firstChat.data.coach.live.pendingRequests)[0];
+  const publicPending = firstChat.data.coach.live.pendingRequests[firstRequestId];
+  if (Object.hasOwn(publicPending, "privateTerms") || Object.hasOwn(publicPending, "legalTerms")) {
+    throw new Error(`Public pending request leaked private filter terms: ${JSON.stringify(publicPending)}`);
+  }
+  const publicStateText = JSON.stringify(await (await fetch(`${relayApp.url}api/state`)).json());
+  if (publicStateText.includes("privateTerms") || publicStateText.includes("legalTerms")) {
+    throw new Error(`Public state leaked private request fields: ${publicStateText}`);
+  }
+  const persistedPending = JSON.parse(await readFile(path.join(relayDataRoot, "sessions", "current.json"), "utf8"))
+    .coach.live.pendingRequests[firstRequestId];
+  if (!persistedPending?.privateTerms?.length || !persistedPending?.legalTerms?.length) {
+    throw new Error(`Persisted pending request lost private filter context: ${JSON.stringify(persistedPending)}`);
+  }
   const firstPacket = latestAgentMessage()?.payload;
   if (latestAgentMessage()?.payload?.kind !== "chess.live_coach") {
     throw new Error(`Relay message was not a live coach packet: ${JSON.stringify(latestAgentMessage()?.payload)}`);
   }
   assertNoLivePacketLeak(firstPacket);
+
+  const illegalWhilePending = await post(`${relayApp.url}api/move`, { uci: "e2e5" });
+  if (illegalWhilePending.response.ok || illegalWhilePending.response.status !== 400) {
+    throw new Error(`Illegal move while coach pending was not rejected: ${JSON.stringify(illegalWhilePending.data)}`);
+  }
+  const afterIllegal = await (await fetch(`${relayApp.url}api/state`)).json();
+  if (afterIllegal.coach.live.pendingRequests[firstRequestId]?.status !== "pending") {
+    throw new Error(`Illegal move stale-cancelled pending request: ${JSON.stringify(afterIllegal.coach.live.pendingRequests[firstRequestId])}`);
+  }
 
   const legalWhilePending = await post(`${relayApp.url}api/move`, { uci: "e2e4" });
   if (!legalWhilePending.response.ok || legalWhilePending.data.history.length !== 2) {
@@ -167,7 +189,8 @@ try {
   replyTo(firstRequestId, { message: "This stale reply should not render." });
   await waitForState(
     relayApp.url,
-    (state) => !state.coach.live.transcript.some((entry) => entry.text === "This stale reply should not render."),
+    (state) => state.coach.live.trace.some((entry) => entry.type === "reply_stale" && entry.requestId === firstRequestId) &&
+      !state.coach.live.transcript.some((entry) => entry.text === "This stale reply should not render."),
     "Stale reply rendered",
   );
 
@@ -206,8 +229,19 @@ try {
   replyTo(emptyRequestId, { message: "" });
   await waitForState(
     relayApp.url,
-    (state) => state.coach.live.transcript.filter((entry) => entry.role === "coach").length === 0,
+    (state) => state.coach.live.trace.some((entry) => entry.type === "reply_empty" && entry.requestId === emptyRequestId) &&
+      state.coach.live.transcript.filter((entry) => entry.role === "coach").length === 0,
     "Empty coach reply displayed a transcript item",
+  );
+
+  const engineLeakChat = await post(`${relayApp.url}api/coach/message`, { text: "more" });
+  const engineLeakRequestId = Object.keys(engineLeakChat.data.coach.live.pendingRequests).find((id) => engineLeakChat.data.coach.live.pendingRequests[id].status === "pending");
+  replyTo(engineLeakRequestId, { message: "Stockfish eval says White should improve the position." });
+  await waitForState(
+    relayApp.url,
+    (state) => state.coach.live.trace.some((entry) => entry.type === "reply_filtered" && entry.reason === "engine_language") &&
+      !state.coach.live.transcript.some((entry) => entry.text.includes("Stockfish")),
+    "Engine-language reply was not filtered",
   );
 
   const revealDenied = await post(`${relayApp.url}api/coach/message`, { text: "reveal" });
@@ -226,9 +260,52 @@ try {
     "Reveal-denied request did not clear",
   );
 
+  await post(`${relayApp.url}api/new-game`, {});
+  const ladderOne = await post(`${relayApp.url}api/coach/message`, { text: "stuck" });
+  if (!ladderOne.response.ok) {
+    throw new Error(`First ladder request failed: ${JSON.stringify(ladderOne.data)}`);
+  }
+  const ladderOneRequestId = Object.keys(ladderOne.data.coach.live.pendingRequests)[0];
+  replyTo(ladderOneRequestId, { message: "What is the most direct threat, and which forcing idea answers it?" });
+  await waitForState(
+    relayApp.url,
+    (state) => state.coach.live.transcript.some((entry) => entry.requestId === ladderOneRequestId && entry.role === "coach"),
+    "First ladder reply was not displayed",
+  );
+  const ladderTwo = await post(`${relayApp.url}api/coach/message`, { text: "more" });
+  if (!ladderTwo.response.ok) {
+    throw new Error(`Second ladder request failed: ${JSON.stringify(ladderTwo.data)}`);
+  }
+  const ladderTwoRequestId = Object.keys(ladderTwo.data.coach.live.pendingRequests).find((id) => ladderTwo.data.coach.live.pendingRequests[id].status === "pending");
+  replyTo(ladderTwoRequestId, { message: "Focus on the most exposed piece before choosing a quiet plan." });
+  await waitForState(
+    relayApp.url,
+    (state) => state.coach.live.transcript.some((entry) => entry.requestId === ladderTwoRequestId && entry.role === "coach"),
+    "Second ladder reply was not displayed",
+  );
+  const revealAllowed = await post(`${relayApp.url}api/coach/message`, { text: "reveal" });
+  const revealAllowedPacket = latestAgentMessage().payload;
+  if (!revealAllowed.response.ok || !revealAllowedPacket.request.revealPermission || revealAllowedPacket.request.ladderStep !== "gated_reveal") {
+    throw new Error(`Reveal was not allowed after ladder progression: ${JSON.stringify(revealAllowedPacket.request)}`);
+  }
+  const revealAllowedRequestId = Object.keys(revealAllowed.data.coach.live.pendingRequests).find((id) => revealAllowed.data.coach.live.pendingRequests[id].status === "pending");
+  replyTo(revealAllowedRequestId, { message: "Examine one forcing candidate and explain what it changes." });
+  await waitForState(
+    relayApp.url,
+    (state) => state.coach.live.transcript.some((entry) => entry.requestId === revealAllowedRequestId && entry.role === "coach"),
+    "Allowed reveal reply was not displayed",
+  );
+
   const reviewState = await post(`${relayApp.url}api/review`, {});
   if (!reviewState.response.ok || reviewState.data.coach.review.state !== "review_planning") {
     throw new Error(`Review plan request was not created: ${JSON.stringify(reviewState.data.coach.review)}`);
+  }
+  const reviewPacket = latestAgentMessage().payload;
+  if (!reviewPacket.data?.liveTrace?.summary || reviewPacket.data.liveTrace.summary.reveals < 1) {
+    throw new Error(`Review packet did not include live trace: ${JSON.stringify(reviewPacket)}`);
+  }
+  if (Object.hasOwn(reviewPacket.data, "hints")) {
+    throw new Error(`Review packet still used legacy hints field: ${JSON.stringify(reviewPacket.data)}`);
   }
   const planRequestId = reviewState.data.coach.review.planRequestId;
   replyTo(planRequestId, {
