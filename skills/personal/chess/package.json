@@ -1,0 +1,20 @@
+{
+  "name": "personal-chess-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal chess learning loop with Maia-3, Stockfish WASM, and a local board UI.",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "setup:maia": "node scripts/setup-maia.mjs",
+    "profile": "node scripts/profile.mjs",
+    "progress": "node scripts/progress.mjs",
+    "smoke": "node scripts/smoke-test.mjs",
+    "check": "node --check src/data.mjs && node --check src/maia.mjs && node --check src/server.mjs && node --check src/stockfish.mjs && node --check scripts/profile.mjs && node --check scripts/progress.mjs && node --check scripts/setup-maia.mjs && node --check scripts/smoke-test.mjs && node --check public/app.js"
+  },
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "cm-chessboard": "^8.12.11",
+    "stockfish": "^18.0.7"
+  }
+}

@@ -1,0 +1,271 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f6f1;
+  --ink: #20231f;
+  --muted: #697166;
+  --line: #d8ddcf;
+  --panel: #ffffff;
+  --green: #55745a;
+  --blue: #3b6384;
+  --amber: #a36f2b;
+  --danger: #9e3d35;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+button:hover {
+  border-color: var(--blue);
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) 360px;
+  gap: 24px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.board-area {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.board {
+  aspect-ratio: 1;
+  max-height: calc(100vh - 48px);
+  max-width: calc(100vh - 48px);
+  min-width: 320px;
+  width: min(100%, 760px);
+}
+
+.panel {
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  gap: 18px;
+  min-height: calc(100vh - 48px);
+  padding: 20px;
+}
+
+.topline {
+  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 14px;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+#game-meta,
+.status-grid span,
+#review-path {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.status-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.status-grid div {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.status-grid strong,
+.status-grid span {
+  display: block;
+}
+
+.status-grid strong {
+  font-size: 15px;
+  margin-top: 4px;
+}
+
+.hint-actions,
+.footer-actions,
+.review-nav,
+.review-feedback {
+  display: flex;
+  gap: 8px;
+}
+
+.hint-actions button:nth-child(1) {
+  border-color: var(--green);
+}
+
+.hint-actions button:nth-child(2) {
+  border-color: var(--blue);
+}
+
+.hint-actions button:nth-child(3) {
+  border-color: var(--amber);
+}
+
+.coach-state {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.coach-card,
+.review-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  line-height: 1.4;
+  margin-top: 10px;
+  min-height: 76px;
+  padding: 12px;
+}
+
+.coach-card p,
+.review-card p {
+  margin: 0 0 8px;
+}
+
+.coach-card p:last-child,
+.review-card p:last-child {
+  margin-bottom: 0;
+}
+
+.coach-bypass {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.section-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section-header span,
+.review-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-panel {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.review-card h3 {
+  font-size: 15px;
+  margin: 0 0 6px;
+}
+
+.review-body {
+  line-height: 1.45;
+}
+
+.review-nav,
+.review-feedback {
+  margin-top: 8px;
+}
+
+.level-recommendation {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.level-recommendation p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+
+.moves {
+  min-height: 0;
+}
+
+#moves {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  list-style-position: inside;
+  margin: 0;
+  max-height: 100%;
+  min-height: 160px;
+  overflow: auto;
+  padding: 10px;
+}
+
+#moves li {
+  font-variant-numeric: tabular-nums;
+  line-height: 1.7;
+}
+
+#review-path {
+  align-self: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .board {
+    max-height: none;
+    min-width: 0;
+    width: min(100vw - 24px, 680px);
+  }
+
+  .panel {
+    border-left: 0;
+    min-height: auto;
+  }
+}

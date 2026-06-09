@@ -14,4 +14,5 @@ npx skills add https://github.com/Skarian/skills/tree/main/skills/personal --glo
 
 | Skill | Description |
 | --- | --- |
+| `chess` | Personal chess learning loop with Maia-3 practice and review |
 | `screenshot` | Review the latest screenshot on Desktop |

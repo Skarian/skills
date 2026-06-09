@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chess Learn</title>
+    <link rel="stylesheet" href="/vendor/cm-chessboard/assets/chessboard.css">
+    <link rel="stylesheet" href="/vendor/cm-chessboard/assets/extensions/markers/markers.css">
+    <link rel="stylesheet" href="/vendor/cm-chessboard/assets/extensions/promotion-dialog/promotion-dialog.css">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="board-area">
+        <div id="board" class="board"></div>
+      </section>
+      <aside class="panel">
+        <header class="topline">
+          <div>
+            <h1>Chess Learn</h1>
+            <p id="game-meta">Loading</p>
+          </div>
+          <button id="new-game" type="button">New</button>
+        </header>
+        <div class="status-grid">
+          <div>
+            <span>Turn</span>
+            <strong id="turn">-</strong>
+          </div>
+          <div>
+            <span>Result</span>
+            <strong id="result">-</strong>
+          </div>
+          <div>
+            <span>Maia</span>
+            <strong id="maia">-</strong>
+          </div>
+        </div>
+        <section class="coach">
+          <h2>Coach</h2>
+          <p id="coach-state" class="coach-state">Ready.</p>
+          <div class="hint-actions">
+            <button id="hint-nudge" type="button">Nudge</button>
+            <button id="hint-direction" type="button">Direction</button>
+            <button id="hint-reveal" type="button">Reveal</button>
+          </div>
+          <article id="coach-card" class="coach-card">
+            <p id="hint-text">Ready.</p>
+          </article>
+          <button id="coach-bypass" class="coach-bypass" type="button" hidden>Continue without coach</button>
+        </section>
+        <section id="review-panel" class="review-panel" hidden>
+          <header class="section-header">
+            <h2>Review</h2>
+            <span id="review-status">Idle</span>
+          </header>
+          <article id="review-card" class="review-card"></article>
+          <div class="review-nav">
+            <button id="review-prev" type="button">Previous</button>
+            <button id="review-next" type="button">Next</button>
+          </div>
+          <div class="review-feedback">
+            <button id="review-got-it" type="button">Got it</button>
+            <button id="review-confused" type="button">Still confused</button>
+          </div>
+          <div id="level-recommendation" class="level-recommendation" hidden>
+            <p id="level-text"></p>
+            <button id="accept-level" type="button">Use next level</button>
+          </div>
+        </section>
+        <section class="moves">
+          <h2>Moves</h2>
+          <ol id="moves"></ol>
+        </section>
+        <footer class="footer-actions">
+          <button id="review" type="button">Review</button>
+          <span id="review-path"></span>
+        </footer>
+      </aside>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
