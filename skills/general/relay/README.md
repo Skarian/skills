@@ -24,7 +24,7 @@ Node skill scripts use the runtime client Relay writes at startup: `~/.skills/re
 
 The HTTP routes are only the wire protocol behind the client and smoke page. Use raw HTTP for debugging or non-Node integrations, not normal skill scripts.
 
-The active MCP process owns the Relay HTTP service. If the Relay port is already in use, stop the other Relay process and restart Codex or Claude.
+The first active MCP process owns the Relay HTTP service. Later same-root MCP processes attach to it so host restarts do not require manually killing Relay. If the Relay port is in use by an unhealthy or different-root process, stop that process and restart Codex or Claude.
 
 Only one relay can be open. Durable state and the runtime client live under `~/.skills/relay/` unless `RELAY_DATA_DIR` is set.
 

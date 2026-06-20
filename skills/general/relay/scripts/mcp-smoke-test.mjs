@@ -282,8 +282,19 @@ try {
   });
   assert.equal(lateReplies.length, 0);
 
-  const secondMcp = await startMcpExpectFailure(env);
-  assert.match(secondMcp.stderr, /Relay startup failed: Relay HTTP port .*already in use/);
+  const secondMcp = createMcp(env);
+  try {
+    const secondInitialized = await secondMcp.send("initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "relay-smoke-second", version: "0.0.0" },
+    });
+    assert.equal(secondInitialized.result.serverInfo.name, "relay");
+    const secondListed = await secondMcp.send("tools/list");
+    assert.deepEqual(secondListed.result.tools.map((tool) => tool.name), ["relay"]);
+  } finally {
+    await secondMcp.close();
+  }
 
   await mcp.close();
   mcpClosed = true;
@@ -299,17 +310,38 @@ if (mcp.stderr && !mcp.stderr.includes("ExperimentalWarning: SQLite")) {
 }
 
 const conflictRoot = await mkdtemp(path.join(os.tmpdir(), "relay-mcp-conflict-"));
+const otherConflictRoot = await mkdtemp(path.join(os.tmpdir(), "relay-mcp-other-conflict-"));
 const conflictPort = await freePort();
 const externalService = await startRelayServer({ root: conflictRoot, port: conflictPort });
 try {
-  const conflict = await startMcpExpectFailure({
+  const attachedMcp = createMcp({
     ...process.env,
     RELAY_DATA_DIR: conflictRoot,
     RELAY_PORT: String(conflictPort),
   });
+  try {
+    const attachedInitialized = await attachedMcp.send("initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "relay-smoke-attached", version: "0.0.0" },
+    });
+    assert.equal(attachedInitialized.result.serverInfo.name, "relay");
+    const attachedListed = await attachedMcp.send("tools/list");
+    assert.deepEqual(attachedListed.result.tools.map((tool) => tool.name), ["relay"]);
+  } finally {
+    await attachedMcp.close();
+  }
+
+  const conflict = await startMcpExpectFailure({
+    ...process.env,
+    RELAY_DATA_DIR: otherConflictRoot,
+    RELAY_PORT: String(conflictPort),
+  });
   assert.match(conflict.stderr, /Relay startup failed: Relay HTTP port .*already in use.*Existing Relay:.*pid.*root/);
+  assert.match(conflict.stderr, /configured for root/);
 } finally {
   await externalService.close();
+  await rm(otherConflictRoot, { recursive: true, force: true });
   await rm(conflictRoot, { recursive: true, force: true });
 }
 

@@ -160,14 +160,16 @@ try {
   assert.equal(existsSync(runtimeClientPath), true);
   assert.equal(existsSync(path.join(httpRoot, "client.d.ts")), true);
   const runtimeClientModule = await import(pathToFileURL(runtimeClientPath));
+  const client = new RelayClient({ baseUrl: service.url });
 
-  await assert.rejects(
-    () => ensureRelayService({ root: httpRoot, port }),
-    /Relay HTTP port .*already in use.*Existing Relay:.*pid.*root/,
-  );
+  const attachedService = await ensureRelayService({ root: httpRoot, port });
+  assert.equal(attachedService.owner, false);
+  assert.equal(attachedService.url, service.url);
+  assert.equal(attachedService.pid, service.pid);
+  await attachedService.close();
+  assert.equal((await client.health()).url, service.url);
   assert.equal(readServiceRuntime({ root: httpRoot }).url, service.url);
 
-  const client = new RelayClient({ baseUrl: service.url });
   const health = await client.health();
   assert.equal(health.url, service.url);
   assert.equal(health.host, "127.0.0.1");
@@ -200,11 +202,11 @@ try {
     pid: 1,
     dbPath: service.dbPath,
   });
-  await assert.rejects(
-    () => ensureRelayService({ root: httpRoot, port }),
-    /Relay HTTP port .*already in use/,
-  );
-  assert.equal(readServiceRuntime({ root: httpRoot }).port, stalePort);
+  const attachedFromStaleRuntime = await ensureRelayService({ root: httpRoot, port });
+  assert.equal(attachedFromStaleRuntime.owner, false);
+  assert.equal(attachedFromStaleRuntime.url, service.url);
+  await attachedFromStaleRuntime.close();
+  assert.equal(readServiceRuntime({ root: httpRoot }).port, port);
 
   process.env.RELAY_URL = service.url;
   assert.equal((await (await createRelayClient({ root: httpRoot })).health()).url, service.url);

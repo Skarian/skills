@@ -32,7 +32,7 @@ Relay requires a Node version with `node:sqlite` available without extra flags.
 
 When Relay starts, it writes `client.mjs` and `client.d.ts` into `~/.skills/relay/` unless `RELAY_DATA_DIR` is set. Node skill scripts should import that runtime client instead of Relay source files or raw HTTP.
 
-The MCP process owns the Relay HTTP service. If startup reports that port `4799` is already in use, stop the other Relay process and restart the agent host.
+The first MCP process owns the Relay HTTP service. Later same-root MCP processes attach to the existing service. If startup reports that port `4799` is already in use by an unhealthy or different-root process, stop that process and restart the agent host.
 
 ## Codex
 

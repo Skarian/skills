@@ -26,5 +26,5 @@ The relay message payload is a non-empty JSON object. Downstream skills define a
 - Use exactly one MCP tool: `relay`.
 - Do not invent polling loops, heartbeat narration, app IDs, relay IDs, cursors, acks, or `inReplyTo` fields for the agent.
 - If `relay({})` says no app has opened a relay, tell the user the app must open first.
-- If Relay startup says the HTTP port is already in use, stop the other Relay process and restart the agent host.
+- If Relay startup says the HTTP port is already in use by an unhealthy or different-root process, stop that process and restart the agent host.
 - Relay coordinates the current agent; it does not launch Codex or Claude.

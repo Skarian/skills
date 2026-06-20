@@ -4,7 +4,7 @@ Use this only for debugging, manual smoke tests, or non-Node integrations. Node 
 
 `RELAY_URL` can target a specific Relay service when you are debugging.
 
-In normal use, the MCP process owns the Relay HTTP service. Do not run a second Relay process on the same port.
+In normal use, the first MCP process owns the Relay HTTP service. Same-root MCP processes can attach to that service after a host restart. Do not run a second Relay service on the same port.
 
 ## HTTP wire protocol
 

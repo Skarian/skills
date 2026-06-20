@@ -1,6 +1,7 @@
 import path from "node:path";
 import { startRelayServer } from "./server.mjs";
 import { relayRoot } from "./store.mjs";
+import { publishRelayClient, writeServiceRuntime } from "./runtime.mjs";
 import {
   DEFAULT_RELAY_PORT,
   readRelayHealth,
@@ -8,7 +9,31 @@ import {
 } from "./relay-client.mjs";
 export { DEFAULT_RELAY_PORT, discoverRelayUrl, readRelayHealth, relayUrl } from "./relay-client.mjs";
 
-async function relayPortConflict({ port, cause }) {
+async function attachExistingRelay({ root, port }) {
+  const url = relayUrl(port);
+  const health = await readRelayHealth(url, { root });
+  writeServiceRuntime({
+    root,
+    url: health.url || url,
+    host: health.host,
+    port: health.port,
+    pid: health.pid,
+    dbPath: health.dbPath,
+  });
+  publishRelayClient({ root });
+  return {
+    url: health.url || url,
+    host: health.host || "127.0.0.1",
+    port: Number(health.port || port),
+    pid: health.pid ?? null,
+    root: health.root || root,
+    dbPath: health.dbPath,
+    owner: false,
+    close: async () => {},
+  };
+}
+
+async function relayPortConflict({ root, port, cause }) {
   const url = relayUrl(port);
   let detail = "";
   try {
@@ -17,8 +42,14 @@ async function relayPortConflict({ port, cause }) {
       health.pid ? `pid ${health.pid}` : null,
       health.root ? `root ${health.root}` : null,
     ].filter(Boolean).join(", ");
-    detail = owner ? ` Existing Relay: ${owner}.` : " Existing Relay responded on the port.";
-  } catch {
+    const rootDetail = health.root && path.resolve(health.root) !== path.resolve(root)
+      ? ` This MCP is configured for root ${path.resolve(root)}.`
+      : "";
+    detail = owner ? ` Existing Relay: ${owner}.${rootDetail}` : " Existing Relay responded on the port.";
+  } catch (error) {
+    if (error.message) detail = ` ${error.message}.`;
+  }
+  if (!detail) {
     detail = " The port is not serving a healthy Relay endpoint.";
   }
   const error = new Error(
@@ -42,6 +73,10 @@ export async function ensureRelayService({
     if (error.code !== "EADDRINUSE") {
       throw error;
     }
-    throw await relayPortConflict({ port: resolvedPort, cause: error });
+    try {
+      return await attachExistingRelay({ root: resolvedRoot, port: resolvedPort });
+    } catch {
+      throw await relayPortConflict({ root: resolvedRoot, port: resolvedPort, cause: error });
+    }
   }
 }
