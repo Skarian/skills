@@ -33,7 +33,7 @@ It includes skills I wrote and skills collected from other repos so I can instal
 | `chatgpt-pro-review` | Consult ChatGPT Pro through the Codex app browser |
 | `consensus` | Use subagent review waves to reach consensus |
 | `discussion` | Discuss multiple open items clearly |
-| `friend` | Use Claude, Gemini, or Codex for reviews |
+| `friend` | Use Claude or Codex for reviews |
 | `grill-me` ([source](https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md)) | Create a shared understanding between agent and user |
 | `handoff` ([source](https://github.com/mattpocock/skills/blob/main/skills/productivity/handoff/SKILL.md)) | Compact the current conversation into a handoff document for another agent to pick up |
 | `humanizer` ([source](https://github.com/blader/humanizer/blob/main/SKILL.md)) | Remove AI slop from writing |

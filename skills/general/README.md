@@ -17,7 +17,7 @@ npx skills add https://github.com/Skarian/skills/tree/main/skills/general --glob
 | `chatgpt-pro-review` | Consult ChatGPT Pro through the Codex app browser |
 | `consensus` | Use subagent review waves to reach consensus |
 | `discussion` | Discuss multiple open items clearly |
-| `friend` | Use Claude, Gemini, or Codex for reviews |
+| `friend` | Use Claude or Codex for reviews |
 | `grill-me` | Create a shared understanding between agent and user |
 | `handoff` | Compact the current conversation into a handoff document for another agent to pick up |
 | `humanizer` | Remove AI slop from writing |

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  printf 'Usage: friend <claude|gemini|codex> "question" [evidence paths or URLs...] [--model name]\n' >&2
+  printf 'Usage: friend <claude|codex> "question" [evidence paths or URLs...] [--model name]\n' >&2
 }
 
 if [ "$#" -eq 1 ]; then
@@ -23,7 +23,7 @@ provider="$1"
 shift
 
 case "$provider" in
-  claude|gemini|codex) ;;
+  claude|codex) ;;
   -h|--help)
     usage
     exit 0
@@ -166,16 +166,6 @@ case "$provider" in
     fi
     for dir in "${dirs[@]}"; do
       cmd+=(--add-dir "$dir")
-    done
-    exec "${cmd[@]}"
-    ;;
-  gemini)
-    cmd=(gemini -p "$prompt" --approval-mode plan)
-    if [ -n "$model" ]; then
-      cmd+=(--model "$model")
-    fi
-    for dir in "${dirs[@]}"; do
-      cmd+=(--include-directories "$dir")
     done
     exec "${cmd[@]}"
     ;;

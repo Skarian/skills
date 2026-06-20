@@ -1,9 +1,9 @@
 # friend
 
-Use Claude, Gemini, or Codex for reviews
+Ask Claude or Codex for a second opinion.
 
 ```bash
-friend <claude|gemini|codex> "question" [evidence paths or URLs...] [--model name]
+friend <claude|codex> "question" [evidence paths or URLs...] [--model name]
 ```
 
-The bundled `scripts/friend` wrapper calls the selected CLI in read-only review mode and prints the response to stdout. It accepts a question plus optional evidence paths or URLs, including directories, images, and `.` for the current repo
+Pass a question plus optional evidence: files, directories, images, URLs, or `.` for the current repo. The wrapper runs the selected CLI in read-only review mode and prints the response to stdout.

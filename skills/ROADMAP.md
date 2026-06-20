@@ -19,7 +19,7 @@ This note tracks skill-inventory decisions while the repository migration settle
 - `consensus`: captures the repeated true-consensus workflow across red/green/adjudication subagent waves.
 - `grill-me`: used regularly and should stay active.
 - `chatgpt-pro-review`: useful in the Codex app browser for direct ChatGPT Pro review.
-- `friend`: read-only second-opinion CLI wrapper for Claude, Gemini, and Codex.
+- `friend`: read-only second-opinion CLI wrapper for Claude and Codex.
 - `humanizer`: used somewhat regularly and should stay active.
 - `reference-module`: migrated to a general skill and remains the repository reference workflow.
 - `skill-research`: captures the system-wide workflow audit used to find repeated manual work worth packaging.
