@@ -124,8 +124,6 @@ export class RelayClient {
       throw new Error("RelayClient requires baseUrl; use createRelayClient() for discovery.");
     }
     this.baseUrl = baseUrl;
-    this.pendingAck = null;
-    this.receiving = false;
   }
 
   async request(pathname, { method = "GET", body = null, searchParams = null } = {}) {
@@ -151,9 +149,9 @@ export class RelayClient {
     return value;
   }
 
-  listRelays({ appName = null, status = null } = {}) {
+  listRelays({ appName = null, lifecycle = null, status = null, limit = null } = {}) {
     return this.request("/api/relays", {
-      searchParams: { app: appName, status },
+      searchParams: { app: appName, lifecycle: lifecycle || status, limit },
     });
   }
 
@@ -168,56 +166,31 @@ export class RelayClient {
     });
   }
 
-  send(payload = {}) {
+  send({ relayId, payload = {} } = {}) {
     return this.request("/api/relay/send", {
       method: "POST",
-      body: payload,
+      body: { relayId, payload },
     });
   }
 
-  async receive() {
-    if (this.receiving) {
-      throw new Error("Relay receive is already waiting.");
-    }
-    if (this.pendingAck) {
-      throw new Error("Relay has an unacknowledged receive batch. Call received() first.");
-    }
-    this.receiving = true;
-    try {
-      const result = await this.request("/api/relay/receive", {
-        method: "POST",
-        body: {},
-      });
-      this.pendingAck = {
-        relayId: result.relayId,
-        through: result.nextAfter,
-      };
-      return {
-        appName: result.appName,
-        items: result.items,
-      };
-    } finally {
-      this.receiving = false;
-    }
-  }
-
-  async received() {
-    if (!this.pendingAck) {
-      throw new Error("Relay has no received batch to acknowledge.");
-    }
-    const ack = this.pendingAck;
-    const result = await this.request("/api/relay/received", {
+  receive({ relayId, after = 0 } = {}) {
+    return this.request("/api/relay/receive", {
       method: "POST",
-      body: ack,
+      body: { relayId, after },
     });
-    this.pendingAck = null;
-    return result;
   }
 
-  closeRelay({ reason = "closed", payload = {} } = {}) {
+  received({ relayId, through } = {}) {
+    return this.request("/api/relay/received", {
+      method: "POST",
+      body: { relayId, through },
+    });
+  }
+
+  closeRelay({ relayId, reason = "closed", payload = {} } = {}) {
     return this.request("/api/relay/close", {
       method: "POST",
-      body: { reason, payload },
+      body: { relayId, reason, payload },
     });
   }
 }

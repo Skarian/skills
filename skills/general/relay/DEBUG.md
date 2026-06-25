@@ -10,14 +10,15 @@ In normal use, the first MCP process owns the Relay HTTP service. Same-root MCP 
 
 ```text
 GET  /api/health
-GET  /api/relays
+GET  /api/relays?limit=10
 POST /api/relay/open      { appName, payload? }
-POST /api/relay/send      <opaque payload>
-POST /api/relay/receive   { after? }
-POST /api/relay/received  { relayId?, through }
-POST /api/relay/close     { reason?, payload? }
+POST /api/relay/send      { relayId, payload? }
+POST /api/relay/receive   { relayId, after? }
+POST /api/relay/received  { relayId, through }
+POST /api/relay/close     { relayId, reason?, payload? }
 ```
 
+`open` always creates a fresh relay and returns its internal `relayId`.
 `receive` waits until an agent reply or close event exists. Tests may wrap calls in their own timers, but Relay does not expose a public receive timeout.
 
 The smoke page is available while Relay is running:

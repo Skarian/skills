@@ -170,7 +170,12 @@ try {
   assert.deepEqual(listed.result.tools.map((tool) => tool.name), ["relay"]);
 
   const noOpen = await mcp.send("tools/call", { name: "relay", arguments: {} });
-  assert.equal(noOpen.error.message, "No app has opened a Relay yet.");
+  assert.deepEqual(noOpen.result.structuredContent, {
+    status: "relays",
+    limit: 10,
+    truncated: false,
+    relays: [],
+  });
 
   const opened = await post(port, "/api/relay/open", {
     appName: "mcp-chess",
@@ -178,47 +183,91 @@ try {
   });
   assert.equal(opened.response.ok, true);
   assert.equal(opened.data.created, true);
+  const relayId = opened.data.relayId;
+  assert.match(relayId, /^r_[0-9a-f]{12}$/);
 
-  const conflict = await post(port, "/api/relay/open", { appName: "other-app" });
-  assert.equal(conflict.response.status, 409);
-  assert.match(conflict.data.error, /Relay already open for app: mcp-chess/);
+  const otherOpened = await post(port, "/api/relay/open", { appName: "other-app" });
+  assert.equal(otherOpened.response.ok, true);
+  const otherRelayId = otherOpened.data.relayId;
+  assert.notEqual(otherRelayId, relayId);
 
-  const waitPromise = mcp.send("tools/call", { name: "relay", arguments: {} });
+  const listedRelays = await mcp.send("tools/call", { name: "relay", arguments: {} });
+  assert.equal(listedRelays.result.structuredContent.status, "relays");
+  assert.equal(listedRelays.result.structuredContent.relays.length, 2);
+  assert.equal(listedRelays.result.structuredContent.relays[0].lifecycle, "open");
+
+  const waitPromise = mcp.send("tools/call", { name: "relay", arguments: { relayId } });
   const early = await Promise.race([waitPromise, timeout(300)]);
   assert.equal(early, Symbol.for("timeout"), "relay returned before the app sent a message");
 
-  const duplicateWait = await mcp.send("tools/call", { name: "relay", arguments: {} });
+  const duplicateWait = await mcp.send("tools/call", { name: "relay", arguments: { relayId } });
   assert.match(duplicateWait.error.message, /active agent waiter/);
 
-  const sent = await post(port, "/api/relay/send", false);
+  const otherWaitPromise = mcp.send("tools/call", { name: "relay", arguments: { relayId: otherRelayId } });
+  const otherEarly = await Promise.race([otherWaitPromise, timeout(300)]);
+  assert.equal(otherEarly, Symbol.for("timeout"), "second relay wait returned before send");
+  const otherSent = await post(port, "/api/relay/send", {
+    relayId: otherRelayId,
+    payload: { other: true },
+  });
+  assert.equal(otherSent.response.ok, true);
+  const otherWaitResult = await Promise.race([otherWaitPromise, timeout(3000)]);
+  assert.deepEqual(otherWaitResult.result.structuredContent, {
+    status: "message",
+    relayId: otherRelayId,
+    appName: "other-app",
+    payload: { other: true },
+  });
+
+  const sent = await post(port, "/api/relay/send", { relayId, payload: false });
   assert.equal(sent.response.ok, true);
 
   const waitResult = await Promise.race([waitPromise, timeout(3000)]);
   assert.notEqual(waitResult, Symbol.for("timeout"), "relay did not return after app send");
   assert.deepEqual(waitResult.result.structuredContent, {
     status: "message",
+    relayId,
     appName: "mcp-chess",
     payload: false,
   });
 
-  const missingReply = await mcp.send("tools/call", { name: "relay", arguments: {} });
-  assert.equal(missingReply.error.message, "Relay is waiting for a reply to the delivered app message.");
+  const recovered = await mcp.send("tools/call", { name: "relay", arguments: { relayId } });
+  assert.deepEqual(recovered.result.structuredContent, waitResult.result.structuredContent);
+  const missingRelayReply = await mcp.send("tools/call", { name: "relay", arguments: { reply: {} } });
+  assert.equal(missingRelayReply.error.message, "relayId is required when reply is provided.");
+  const unknownFieldReply = await mcp.send("tools/call", {
+    name: "relay",
+    arguments: { relayId, bodyMarkdown: "old shape" },
+  });
+  assert.equal(unknownFieldReply.error.message, "Unknown Relay argument: bodyMarkdown");
 
   const followupPromise = mcp.send("tools/call", {
     name: "relay",
-    arguments: { bodyMarkdown: "Develop a piece before attacking." },
+    arguments: { relayId, reply: { bodyMarkdown: "Develop a piece before attacking." } },
   });
-  const appReply = await post(port, "/api/relay/receive", { after: 0 });
+  const duplicateReply = await mcp.send("tools/call", {
+    name: "relay",
+    arguments: { relayId, reply: { bodyMarkdown: "Ignored duplicate." } },
+  });
+  assert.deepEqual(duplicateReply.result.structuredContent, {
+    status: "reply",
+    relayId,
+    appName: "mcp-chess",
+    inReplyTo: sent.data.event.seq,
+    payload: { bodyMarkdown: "Develop a piece before attacking." },
+    duplicate: true,
+  });
+
+  const appReply = await post(port, "/api/relay/receive", { relayId, after: 0 });
   assert.equal(appReply.response.ok, true);
   assert.equal(appReply.data.items.length, 1);
   assert.equal(appReply.data.items[0].inReplyTo, sent.data.event.seq);
   assert.deepEqual(appReply.data.items[0].payload, { bodyMarkdown: "Develop a piece before attacking." });
 
-  const marked = await post(port, "/api/relay/received", { through: appReply.data.nextAfter });
+  const marked = await post(port, "/api/relay/received", { relayId, through: appReply.data.nextAfter });
   assert.equal(marked.response.ok, true);
-  const openRelay = store.findOpenRelay();
   const empty = store.pollEvents({
-    relayId: openRelay.relayId,
+    relayId,
     client: "app",
     cursor: 0,
     types: ["relay.reply"],
@@ -229,6 +278,7 @@ try {
   assert.equal(stillWaiting, Symbol.for("timeout"), "relay did not wait again after replying");
 
   const closed = await post(port, "/api/relay/close", {
+    relayId,
     reason: "test-complete",
     payload: { ok: true },
   });
@@ -236,6 +286,7 @@ try {
   const closedResult = await Promise.race([followupPromise, timeout(3000)]);
   assert.deepEqual(closedResult.result.structuredContent, {
     status: "closed",
+    relayId,
     appName: "mcp-chess",
     reason: "test-complete",
     payload: { ok: true },
@@ -243,32 +294,42 @@ try {
 
   const lateReply = await mcp.send("tools/call", {
     name: "relay",
-    arguments: { ignored: true },
+    arguments: { relayId, reply: { ignored: true } },
   });
-  assert.equal(lateReply.error.message, "No app has opened a Relay yet.");
+  assert.deepEqual(lateReply.result.structuredContent, closedResult.result.structuredContent);
 
-  await post(port, "/api/relay/open", {
+  const closeBeforeReplyOpened = await post(port, "/api/relay/open", {
     appName: "mcp-close-before-reply",
     payload: { mode: "close-before-reply" },
   });
-  const closeBeforeReplyWait = mcp.send("tools/call", { name: "relay", arguments: {} });
-  const closeBeforeReplySent = await post(port, "/api/relay/send", { question: "close soon" });
+  const closeBeforeReplyRelayId = closeBeforeReplyOpened.data.relayId;
+  const closeBeforeReplyWait = mcp.send("tools/call", {
+    name: "relay",
+    arguments: { relayId: closeBeforeReplyRelayId },
+  });
+  const closeBeforeReplySent = await post(port, "/api/relay/send", {
+    relayId: closeBeforeReplyRelayId,
+    payload: { question: "close soon" },
+  });
   const closeBeforeReplyMessage = await Promise.race([closeBeforeReplyWait, timeout(3000)]);
   assert.deepEqual(closeBeforeReplyMessage.result.structuredContent, {
     status: "message",
+    relayId: closeBeforeReplyRelayId,
     appName: "mcp-close-before-reply",
     payload: { question: "close soon" },
   });
   await post(port, "/api/relay/close", {
+    relayId: closeBeforeReplyRelayId,
     reason: "closed-before-reply",
     payload: { ok: true },
   });
   const closeBeforeReplyResult = await mcp.send("tools/call", {
     name: "relay",
-    arguments: { bodyMarkdown: "late" },
+    arguments: { relayId: closeBeforeReplyRelayId, reply: { bodyMarkdown: "late" } },
   });
   assert.deepEqual(closeBeforeReplyResult.result.structuredContent, {
     status: "closed",
+    relayId: closeBeforeReplyRelayId,
     appName: "mcp-close-before-reply",
     reason: "closed-before-reply",
     payload: { ok: true },
@@ -281,6 +342,35 @@ try {
     types: ["relay.reply"],
   });
   assert.equal(lateReplies.length, 0);
+
+  const liveCloseRaceOpened = await post(port, "/api/relay/open", {
+    appName: "mcp-live-close-race",
+    payload: {},
+  });
+  const liveCloseRaceRelayId = liveCloseRaceOpened.data.relayId;
+  const liveCloseRaceWait = mcp.send("tools/call", {
+    name: "relay",
+    arguments: { relayId: liveCloseRaceRelayId },
+  });
+  const liveCloseRaceEarly = await Promise.race([liveCloseRaceWait, timeout(200)]);
+  assert.equal(liveCloseRaceEarly, Symbol.for("timeout"), "race wait returned before send/close");
+  await post(port, "/api/relay/send", {
+    relayId: liveCloseRaceRelayId,
+    payload: { question: "message should lose to close" },
+  });
+  await post(port, "/api/relay/close", {
+    relayId: liveCloseRaceRelayId,
+    reason: "closed-during-live-wait",
+    payload: { ok: true },
+  });
+  const liveCloseRaceResult = await Promise.race([liveCloseRaceWait, timeout(3000)]);
+  assert.deepEqual(liveCloseRaceResult.result.structuredContent, {
+    status: "closed",
+    relayId: liveCloseRaceRelayId,
+    appName: "mcp-live-close-race",
+    reason: "closed-during-live-wait",
+    payload: { ok: true },
+  });
 
   const secondMcp = createMcp(env);
   try {

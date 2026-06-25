@@ -13,10 +13,14 @@ relay({})
 ```
 
 ```js
-relay({ "bodyMarkdown": "Develop a piece before attacking." })
+relay({ "relayId": "r_abc123def456" })
 ```
 
-`relay({})` waits. Any non-empty object replies to the last app message, then waits again.
+```js
+relay({ "relayId": "r_abc123def456", "reply": { "bodyMarkdown": "Develop a piece before attacking." } })
+```
+
+`relay({})` lists recent sessions. `relay({ relayId })` waits on one session. `relay({ relayId, reply })` sends the app exactly `reply`, then waits again.
 
 ## App use
 
@@ -26,7 +30,7 @@ The HTTP routes are only the wire protocol behind the client and smoke page. Use
 
 The first active MCP process owns the Relay HTTP service. Later same-root MCP processes attach to it so host restarts do not require manually killing Relay. If the Relay port is in use by an unhealthy or different-root process, stop that process and restart Codex or Claude.
 
-Only one relay can be open. Durable state and the runtime client live under `~/.skills/relay/` unless `RELAY_DATA_DIR` is set.
+Multiple relays can be open. Each `openRelay` creates a fresh internal `relayId`; apps keep that id and pass it on every send, receive, acknowledge, and close call. Durable state and the runtime client live under `~/.skills/relay/` unless `RELAY_DATA_DIR` is set.
 
 ## Install
 

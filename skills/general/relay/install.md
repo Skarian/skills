@@ -69,9 +69,9 @@ After restarting the agent host:
 
 1. Open `http://127.0.0.1:4799/`.
 2. Click `Open`.
-3. Have the agent call `relay({})`.
+3. Have the agent call `relay({})`, then `relay({ relayId })` for the opened relay.
 4. Click `Send`.
-5. Have the agent reply with a small JSON object.
+5. Have the agent reply with `relay({ relayId, reply: <small JSON object> })`.
 6. Click `Receive`.
 7. Click `Close` and confirm the agent sees `status: "closed"`.
 

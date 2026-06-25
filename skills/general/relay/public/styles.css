@@ -25,6 +25,7 @@ h2 {
 
 button,
 input,
+select,
 textarea {
   border: 1px solid #d7dde6;
   border-radius: 6px;

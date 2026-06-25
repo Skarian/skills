@@ -7,13 +7,18 @@ import { waitForEvents } from "../src/wait.mjs";
 const PROTOCOL_VERSION = "2025-11-25";
 const CLIENT = "agent";
 const RELAY_EVENTS = ["relay.message", "relay.closed"];
+const ENVELOPE_KEYS = new Set(["relayId", "reply"]);
 const TOOL = {
   name: "relay",
-  description: "Wait on the open Relay app, or send an opaque reply and wait again.",
+  description: "List Relay sessions, wait on a specific relayId, or reply on that relayId and wait again.",
   inputSchema: {
     type: "object",
-    description: "Use {} to wait. Use any non-empty object as the opaque reply payload.",
-    additionalProperties: true,
+    description: "Use {} to list relays. Use { relayId } to wait. Use { relayId, reply } to reply and wait again.",
+    additionalProperties: false,
+    properties: {
+      relayId: { type: "string" },
+      reply: {},
+    },
   },
 };
 
@@ -36,10 +41,6 @@ function toolResult(value) {
   };
 }
 
-function isEmptyObject(value) {
-  return !value || Object.keys(value).length === 0;
-}
-
 const root = relayRoot();
 let service;
 try {
@@ -51,50 +52,26 @@ try {
 const store = new RelayStore({ root });
 const waits = new Map();
 
-function currentRelay() {
-  const relay = store.findClientRelay(CLIENT);
-  if (!relay) {
-    throw new Error("No app has opened a Relay yet.");
+function validateInput(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Relay arguments must be an object.");
   }
-  return relay;
-}
-
-function submitReply(input, relay) {
-  const cursor = store.ackThrough({ relayId: relay.relayId, client: CLIENT });
-  const pendingEvent = store.pollEvents({
-    relayId: relay.relayId,
-    client: CLIENT,
-    cursor,
-    limit: 1,
-    types: RELAY_EVENTS,
-  })[0];
-  if (pendingEvent?.type === "relay.closed") {
-    return cursor;
+  const unknown = Object.keys(input).filter((key) => !ENVELOPE_KEYS.has(key));
+  if (unknown.length) {
+    throw new Error(`Unknown Relay argument: ${unknown[0]}`);
   }
-  const pendingSeq = store.agentPendingSeq({ relayId: relay.relayId });
-  if (isEmptyObject(input)) {
-    if (pendingSeq) {
-      throw new Error("Relay is waiting for a reply to the delivered app message.");
-    }
-    return cursor;
+  if (Object.hasOwn(input, "reply") && !input.relayId) {
+    throw new Error("relayId is required when reply is provided.");
   }
-  if (!pendingSeq) {
-    throw new Error("Relay has no delivered app message to reply to.");
-  }
-  store.replyToRelay({
-    relayId: relay.relayId,
-    payload: input,
-    ackThrough: pendingSeq,
-  });
-  return pendingSeq;
 }
 
 function formatEvent(relay, event) {
-  const payload = event.payload;
-  if (event.type === "relay.closed") {
+  const payload = event?.payload;
+  if (event?.type === "relay.closed" || relay.status === "closed") {
     const envelope = payload && typeof payload === "object" ? payload : {};
     return {
       status: "closed",
+      relayId: relay.relayId,
       appName: relay.appName,
       reason: envelope.reason || "closed",
       payload: Object.hasOwn(envelope, "payload") ? envelope.payload : {},
@@ -102,19 +79,48 @@ function formatEvent(relay, event) {
   }
   return {
     status: "message",
+    relayId: relay.relayId,
     appName: relay.appName,
     payload,
   };
 }
 
-async function callRelay(id, input) {
-  const relay = currentRelay();
+function closeResult(relay, closeEvent = null) {
+  return formatEvent(relay, closeEvent || store.closeEvent({ relayId: relay.relayId }));
+}
+
+function ackAndFormat(relay, event) {
+  if (event?.type === "relay.message" || event?.type === "relay.closed") {
+    store.ackEvents({ relayId: relay.relayId, client: CLIENT, through: event.seq });
+  }
+  return formatEvent(relay, event);
+}
+
+function recoverPending(relay) {
+  const delivered = store.deliveredMessageSeq({ relayId: relay.relayId });
+  const cursor = store.ackThrough({ relayId: relay.relayId, client: CLIENT });
+  if (delivered) {
+    const closeAfter = store.closeEventAfter({ relayId: relay.relayId, seq: delivered });
+    if (closeAfter) return { event: closeAfter, ack: true };
+    if (!store.replyFor({ relayId: relay.relayId, inReplyTo: delivered })) {
+      return { event: store.messageEvent({ relayId: relay.relayId, seq: delivered }), ack: false };
+    }
+  }
+  if (relay.status === "closed") {
+    return {
+      event: store.closeEventAfter({ relayId: relay.relayId, seq: cursor }) || store.closeEvent({ relayId: relay.relayId }),
+      ack: true,
+    };
+  }
+  return null;
+}
+
+async function waitOnRelay(id, relay, cursor) {
   const owner = `${process.pid}:${id}`;
   store.acquireWait({ relayId: relay.relayId, owner, pid: process.pid });
   const controller = new AbortController();
   waits.set(id, controller);
   try {
-    const cursor = submitReply(input, relay);
     const waited = await waitForEvents(store, {
       relayId: relay.relayId,
       client: CLIENT,
@@ -122,15 +128,59 @@ async function callRelay(id, input) {
       types: RELAY_EVENTS,
       signal: controller.signal,
     });
-    const event = waited.events[0];
-    if (event.type === "relay.message" || event.type === "relay.closed") {
-      store.ackEvents({ relayId: relay.relayId, client: CLIENT, through: event.seq });
-    }
-    ok(id, toolResult(formatEvent(relay, event)));
+    return ackAndFormat(relay, waited.events.find((event) => event.type === "relay.closed") || waited.events[0]);
   } finally {
     waits.delete(id);
-    store.releaseWait({ owner });
+    store.releaseWait({ relayId: relay.relayId, owner });
   }
+}
+
+async function waitOrRecover(id, relay) {
+  const recovered = recoverPending(relay);
+  if (recovered?.event) {
+    return recovered.ack ? ackAndFormat(relay, recovered.event) : formatEvent(relay, recovered.event);
+  }
+  const cursor = store.ackThrough({ relayId: relay.relayId, client: CLIENT });
+  return waitOnRelay(id, relay, cursor);
+}
+
+async function replyThenWait(id, relay, reply) {
+  const delivered = store.deliveredMessageSeq({ relayId: relay.relayId });
+  if (!delivered) {
+    if (relay.status === "closed") return closeResult(relay);
+    throw new Error("Relay has no delivered app message to reply to.");
+  }
+  const closeAfter = store.closeEventAfter({ relayId: relay.relayId, seq: delivered });
+  if (closeAfter) return ackAndFormat(relay, closeAfter);
+  const replied = store.replyToRelay({
+    relayId: relay.relayId,
+    payload: reply,
+    ackThrough: delivered,
+  });
+  if (replied.duplicate) {
+    return {
+      status: "reply",
+      relayId: relay.relayId,
+      appName: relay.appName,
+      inReplyTo: delivered,
+      payload: replied.event.payload.payload,
+      duplicate: true,
+    };
+  }
+  return waitOnRelay(id, relay, delivered);
+}
+
+async function callRelay(id, input) {
+  validateInput(input);
+  if (!Object.hasOwn(input, "relayId")) {
+    ok(id, toolResult(store.listRelaySummaries()));
+    return;
+  }
+  const relay = store.resolveRelay({ relayId: input.relayId });
+  const result = Object.hasOwn(input, "reply")
+    ? await replyThenWait(id, relay, input.reply)
+    : await waitOrRecover(id, relay);
+  ok(id, toolResult(result));
 }
 
 async function handleRequest(message) {

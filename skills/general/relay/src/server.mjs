@@ -54,6 +54,12 @@ function bodyValue(body, key, fallback) {
   return body && Object.hasOwn(body, key) ? body[key] : fallback;
 }
 
+function httpError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
 function eventItem(event) {
   const payload = event.payload;
   const envelope = payload && typeof payload === "object" ? payload : {};
@@ -102,12 +108,11 @@ export async function startRelayServer(options = {}) {
           ...serviceInfo(store, server),
         });
       } else if (req.method === "GET" && url.pathname === "/api/relays") {
-        jsonReply(res, 200, {
-          relays: store.listRelays({
-            appName: url.searchParams.get("app") || undefined,
-            status: url.searchParams.get("status") || undefined,
-          }),
-        });
+        jsonReply(res, 200, store.listRelaySummaries({
+          appName: url.searchParams.get("app") || undefined,
+          lifecycle: url.searchParams.get("lifecycle") || url.searchParams.get("status") || undefined,
+          limit: url.searchParams.get("limit") || undefined,
+        }));
       } else if (req.method === "POST" && url.pathname === "/api/relay/open") {
         const body = await parseBody(req);
         jsonReply(res, 200, store.createRelay({
@@ -116,40 +121,51 @@ export async function startRelayServer(options = {}) {
         }));
       } else if (req.method === "POST" && url.pathname === "/api/relay/send") {
         const body = await parseBody(req);
-        jsonReply(res, 200, store.sendToAgent({ payload: body }));
+        jsonReply(res, 200, store.sendToAgent({
+          relayId: body.relayId,
+          payload: bodyValue(body, "payload", {}),
+        }));
       } else if (req.method === "POST" && url.pathname === "/api/relay/receive") {
         const body = await parseBody(req);
-        const relay = store.findClientRelay("app");
-        if (!relay) {
-          throw new Error("No open relay");
-        }
-        const waited = await waitForEvents(store, {
-          relayId: relay.relayId,
+        const relay = store.resolveRelay({ relayId: body.relayId });
+        const after = Number(body.after || 0);
+        const immediate = store.pollEvents({
+          relayId: body.relayId,
           client: "app",
-          cursor: Number(body.after || 0),
+          cursor: after,
           types: ["relay.reply", "relay.closed"],
         });
+        if (!immediate.length && relay.status !== "open") {
+          throw httpError(`Relay is not open: ${relay.relayId}`, 409);
+        }
+        const events = immediate.length ? immediate : (await waitForEvents(store, {
+          relayId: body.relayId,
+          client: "app",
+          cursor: after,
+          types: ["relay.reply", "relay.closed"],
+        })).events;
         jsonReply(res, 200, {
           relayId: relay.relayId,
           appName: relay.appName,
-          after: Number(body.after || 0),
-          nextAfter: waited.events.at(-1).seq,
-          items: waited.events.map(eventItem),
+          after,
+          nextAfter: events.at(-1).seq,
+          items: events.map(eventItem),
         });
       } else if (req.method === "POST" && url.pathname === "/api/relay/received") {
         const body = await parseBody(req);
-        const relay = body.relayId ? store.getRelay(body.relayId) : store.findClientRelay("app");
-        if (!relay) {
-          throw new Error("No open relay");
+        store.resolveRelay({ relayId: body.relayId });
+        if (!Object.hasOwn(body, "through")) {
+          throw httpError("through is required", 400);
         }
         jsonReply(res, 200, store.ackEvents({
-          relayId: relay.relayId,
+          relayId: body.relayId,
           client: "app",
           through: Number(body.through || 0),
         }));
       } else if (req.method === "POST" && url.pathname === "/api/relay/close") {
         const body = await parseBody(req);
         jsonReply(res, 200, store.closeRelay({
+          relayId: body.relayId,
           reason: body.reason || "closed",
           payload: bodyValue(body, "payload", {}),
         }));

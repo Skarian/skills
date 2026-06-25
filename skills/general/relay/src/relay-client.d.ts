@@ -20,8 +20,21 @@ export type RelayEventItem = {
 };
 
 export type RelayReceiveResult = {
+  relayId: string;
   appName: string;
+  after: number;
+  nextAfter: number;
   items: RelayEventItem[];
+};
+
+export type RelaySummary = {
+  relayId: string;
+  appName: string;
+  lifecycle: "open" | "closed";
+  state: "agent_turn" | "agent_connected" | "waiting_for_agent" | "idle" | null;
+  attention: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export const DEFAULT_RELAY_PORT: number;
@@ -35,13 +48,13 @@ export class RelayClient {
   baseUrl: string;
   constructor(options: { baseUrl: string });
   request(pathname: string, options?: RelayRequestOptions): Promise<any>;
-  listRelays(options?: { appName?: string | null; status?: string | null }): Promise<any>;
+  listRelays(options?: { appName?: string | null; lifecycle?: string | null; status?: string | null; limit?: number | null }): Promise<{ status: "relays"; limit: number; truncated: boolean; relays: RelaySummary[] }>;
   health(): Promise<any>;
   openRelay(options: { appName: string; payload?: unknown }): Promise<any>;
-  send(payload?: unknown): Promise<any>;
-  receive(): Promise<RelayReceiveResult>;
-  received(): Promise<any>;
-  closeRelay(options?: { reason?: string; payload?: unknown }): Promise<any>;
+  send(options: { relayId: string; payload?: unknown }): Promise<any>;
+  receive(options: { relayId: string; after?: number }): Promise<RelayReceiveResult>;
+  received(options: { relayId: string; through: number }): Promise<any>;
+  closeRelay(options: { relayId: string; reason?: string; payload?: unknown }): Promise<any>;
 }
 
 export function createRelayClient(options?: CreateRelayClientOptions): Promise<RelayClient | null>;

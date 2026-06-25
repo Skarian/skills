@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { RelayStore } from "../src/store.mjs";
+import { RelayStore, relayDbPath } from "../src/store.mjs";
 import { discoverRelayUrl, ensureRelayService } from "../src/service.mjs";
 import { readServiceRuntime, writeServiceRuntime } from "../src/runtime.mjs";
 import { safeJoin, startRelayServer } from "../src/server.mjs";
@@ -37,25 +38,38 @@ const opened = store.createRelay({
   payload: false,
 });
 assert.equal(opened.created, true);
+assert.equal(opened.relayId, opened.relay.relayId);
+assert.match(opened.relay.relayId, /^r_[0-9a-f]{12}$/);
 assert.equal(opened.relay.payload, false);
 
-const reused = store.createRelay({
+const sameApp = store.createRelay({
   appName: "chess",
   payload: { ignored: true },
 });
-assert.equal(reused.created, false);
-assert.equal(reused.relay.relayId, opened.relay.relayId);
+assert.equal(sameApp.created, true);
+assert.notEqual(sameApp.relay.relayId, opened.relay.relayId);
 
-assert.throws(() => store.createRelay({
+const otherApp = store.createRelay({
   appName: "other-app",
   payload: {},
-}), /Relay already open for app: chess/);
+});
+assert.equal(otherApp.created, true);
+
+assert.throws(() => store.sendToAgent({
+  payload: {},
+}), /relayId is required/);
+assert.throws(() => store.sendToAgent({
+  relayId: "missing",
+  payload: {},
+}), /Unknown relay: missing/);
 
 const message = store.sendToAgent({
   relayId: opened.relay.relayId,
   payload: 0,
 });
 assert.equal(message.event.type, "relay.message");
+assert.equal(store.relaySummary(opened.relay.relayId).state, "waiting_for_agent");
+assert.equal(store.relaySummary(opened.relay.relayId).attention, true);
 
 const agentEvents = store.pollEvents({
   relayId: opened.relay.relayId,
@@ -65,6 +79,9 @@ const agentEvents = store.pollEvents({
 });
 assert.equal(agentEvents.length, 1);
 assert.equal(agentEvents[0].payload, 0);
+store.ackEvents({ relayId: opened.relay.relayId, client: "agent", through: agentEvents[0].seq });
+assert.equal(store.relaySummary(opened.relay.relayId).state, "agent_turn");
+assert.equal(store.relaySummary(opened.relay.relayId).attention, true);
 
 const reply = store.replyToRelay({
   relayId: opened.relay.relayId,
@@ -73,6 +90,31 @@ const reply = store.replyToRelay({
 });
 assert.equal(reply.event.type, "relay.reply");
 assert.equal(reply.ack.through, agentEvents[0].seq);
+const duplicateReply = store.replyToRelay({
+  relayId: opened.relay.relayId,
+  payload: { ignored: true },
+  ackThrough: agentEvents[0].seq,
+});
+assert.equal(duplicateReply.event.seq, reply.event.seq);
+assert.equal(duplicateReply.duplicate, true);
+
+const racedReplyRelay = store.createRelay({ appName: "race-reply" });
+const racedMessage = store.sendToAgent({
+  relayId: racedReplyRelay.relayId,
+  payload: { prompt: "race" },
+});
+store.ackEvents({ relayId: racedReplyRelay.relayId, client: "agent", through: racedMessage.event.seq });
+store.db.prepare(`
+  INSERT INTO messages (event_id, relay_id, kind, in_reply_to, payload_json, created_at)
+  VALUES (?, ?, 'reply', ?, ?, ?)
+`).run("event-raced-reply", racedReplyRelay.relayId, racedMessage.event.seq, JSON.stringify({ first: true }), new Date().toISOString());
+const racedDuplicate = store.replyToRelay({
+  relayId: racedReplyRelay.relayId,
+  payload: { second: true },
+  ackThrough: racedMessage.event.seq,
+});
+assert.equal(racedDuplicate.duplicate, true);
+assert.deepEqual(racedDuplicate.event.payload.payload, { first: true });
 
 const appEvents = store.pollEvents({
   relayId: opened.relay.relayId,
@@ -83,15 +125,6 @@ const appEvents = store.pollEvents({
 assert.equal(appEvents.length, 1);
 assert.equal(appEvents[0].payload.payload, false);
 
-const reusedWithPendingReply = store.createRelay({ appName: "chess" });
-assert.equal(reusedWithPendingReply.after, 0);
-assert.equal(store.pollEvents({
-  relayId: opened.relay.relayId,
-  client: "app",
-  cursor: reusedWithPendingReply.after,
-  types: ["relay.reply"],
-}).length, 1);
-
 store.ackEvents({ relayId: opened.relay.relayId, client: "app", through: appEvents[0].seq });
 assert.equal(store.pollEvents({
   relayId: opened.relay.relayId,
@@ -100,22 +133,97 @@ assert.equal(store.pollEvents({
   types: ["relay.reply"],
 }).length, 0);
 
+store.acquireWait({ relayId: sameApp.relay.relayId, owner: "same-app-waiter", pid: process.pid });
+assert.equal(store.relaySummary(sameApp.relay.relayId).state, "agent_connected");
+assert.throws(() => store.acquireWait({
+  relayId: sameApp.relay.relayId,
+  owner: "same-app-waiter-2",
+  pid: process.pid,
+}), /active agent waiter/);
+store.acquireWait({ relayId: otherApp.relay.relayId, owner: "other-app-waiter", pid: process.pid });
+store.releaseWait({ relayId: sameApp.relay.relayId, owner: "same-app-waiter" });
+store.releaseWait({ relayId: otherApp.relay.relayId, owner: "other-app-waiter" });
+
 const closed = store.closeRelay({
   relayId: opened.relay.relayId,
   payload: "done",
 });
 assert.equal(closed.relay.status, "closed");
 assert.equal(closed.event.payload.payload, "done");
-assert.equal(store.findClientRelay("agent").relayId, opened.relay.relayId);
+assert.equal(store.relaySummary(opened.relay.relayId).state, null);
+assert.equal(store.relaySummary(opened.relay.relayId).attention, true);
+assert.equal(store.closeRelay({ relayId: opened.relay.relayId }).event.seq, closed.event.seq);
 store.ackEvents({ relayId: opened.relay.relayId, client: "agent", through: closed.event.seq });
-assert.equal(store.findClientRelay("agent"), null);
+assert.equal(store.relaySummary(opened.relay.relayId).attention, false);
 assert.throws(() => store.replyToRelay({
   relayId: opened.relay.relayId,
   payload: {},
+  ackThrough: agentEvents[0].seq,
 }), /Relay is not open/);
+
+const summaries = store.listRelaySummaries({ limit: 2 });
+assert.equal(summaries.status, "relays");
+assert.equal(summaries.limit, 2);
+assert.equal(summaries.truncated, true);
+assert.equal(summaries.relays.length, 2);
+assert.equal(store.listRelaySummaries({ limit: "bad" }).limit, 10);
 
 store.close();
 await rm(root, { recursive: true, force: true });
+
+const migrationRoot = await mkdtemp(path.join(os.tmpdir(), "relay-migration-smoke-"));
+const migrationDb = new DatabaseSync(relayDbPath(migrationRoot));
+try {
+  migrationDb.exec(`
+    CREATE TABLE relays (
+      id TEXT PRIMARY KEY,
+      app_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      app_received_seq INTEGER NOT NULL DEFAULT 0,
+      agent_delivered_seq INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      closed_at TEXT
+    );
+    CREATE TABLE messages (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT NOT NULL UNIQUE,
+      relay_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      in_reply_to INTEGER,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (relay_id) REFERENCES relays(id)
+    );
+  `);
+  const at = new Date().toISOString();
+  migrationDb.prepare(`
+    INSERT INTO relays
+      (id, app_name, status, payload_json, app_received_seq, agent_delivered_seq, created_at, updated_at, closed_at)
+    VALUES ('r_migrated', 'migration', 'open', '{}', 0, 1, ?, ?, NULL)
+  `).run(at, at);
+  migrationDb.prepare(`
+    INSERT INTO messages (event_id, relay_id, kind, in_reply_to, payload_json, created_at)
+    VALUES (?, 'r_migrated', 'reply', 1, ?, ?)
+  `).run("event-migration-first", JSON.stringify({ first: true }), at);
+  migrationDb.prepare(`
+    INSERT INTO messages (event_id, relay_id, kind, in_reply_to, payload_json, created_at)
+    VALUES (?, 'r_migrated', 'reply', 1, ?, ?)
+  `).run("event-migration-second", JSON.stringify({ second: true }), at);
+} finally {
+  migrationDb.close();
+}
+const migratedStore = new RelayStore({ root: migrationRoot });
+const migratedReplies = migratedStore.db.prepare(`
+  SELECT payload_json FROM messages
+  WHERE relay_id = 'r_migrated' AND kind = 'reply' AND in_reply_to = 1
+  ORDER BY seq ASC
+`).all();
+assert.equal(migratedReplies.length, 1);
+assert.deepEqual(JSON.parse(migratedReplies[0].payload_json), { first: true });
+migratedStore.close();
+await rm(migrationRoot, { recursive: true, force: true });
 
 assert.equal(safeJoin("/tmp/relay-public", "index.html"), "/tmp/relay-public/index.html");
 assert.throws(() => safeJoin("/tmp/relay-public", "../relay-publicity/secret.txt"), /Invalid path/);
@@ -242,76 +350,92 @@ try {
     appName: "debug-app",
     payload: null,
   });
+  assert.equal(openedHttp.relayId, openedHttp.relay.relayId);
+  assert.match(openedHttp.relayId, /^r_[0-9a-f]{12}$/);
   assert.equal(openedHttp.relay.payload, null);
-  await assert.rejects(() => client.received(), /no received batch/);
+  await assert.rejects(() => client.received(), /relayId is required/);
 
-  const reusedHttp = await client.openRelay({
+  const secondHttp = await client.openRelay({
     appName: "debug-app",
     payload: { ignored: true },
   });
-  assert.equal(reusedHttp.created, false);
-  assert.equal(reusedHttp.relay.relayId, openedHttp.relay.relayId);
+  assert.equal(secondHttp.created, true);
+  assert.notEqual(secondHttp.relay.relayId, openedHttp.relay.relayId);
 
-  await assert.rejects(() => client.openRelay({ appName: "other-debug-app" }), /Relay already open for app: debug-app/);
+  const otherHttp = await client.openRelay({ appName: "other-debug-app" });
+  assert.equal(otherHttp.created, true);
+  assert.notEqual(otherHttp.relay.relayId, openedHttp.relay.relayId);
+  const listedHttp = await client.listRelays({ limit: 2 });
+  assert.equal(listedHttp.status, "relays");
+  assert.equal(listedHttp.limit, 2);
+  assert.equal(listedHttp.truncated, true);
+  assert.equal(listedHttp.relays.length, 2);
 
-  const published = await client.send(false);
+  await assert.rejects(() => client.send({ payload: false }), /relayId is required/);
+  await assert.rejects(() => client.send({ relayId: "missing", payload: false }), /Unknown relay: missing/);
+
+  const published = await client.send({ relayId: openedHttp.relayId, payload: false });
   assert.equal(published.event.type, "relay.message");
 
   const agentHttpEvents = httpStore.pollEvents({
-    relayId: openedHttp.relay.relayId,
+    relayId: openedHttp.relayId,
     client: "agent",
     cursor: openedHttp.after,
     types: ["relay.message"],
   });
   assert.equal(agentHttpEvents.length, 1);
   assert.equal(agentHttpEvents[0].payload, false);
+  assert.equal((await client.listRelays({ limit: 1 })).relays[0].relayId, openedHttp.relayId);
 
-  const pendingReceive = client.receive();
+  const pendingReceive = client.receive({ relayId: openedHttp.relayId, after: 0 });
   const earlyReceive = await Promise.race([pendingReceive, timeout(200)]);
   assert.equal(earlyReceive, Symbol.for("timeout"), "receive returned before an agent reply existed");
-  await assert.rejects(() => client.receive(), /already waiting/);
 
   const replied = httpStore.replyToRelay({
-    relayId: openedHttp.relay.relayId,
+    relayId: openedHttp.relayId,
     payload: 0,
+    ackThrough: agentHttpEvents[0].seq,
   });
   assert.equal(replied.event.type, "relay.reply");
 
   const appHttpEvents = await Promise.race([pendingReceive, timeout(3000)]);
   assert.notEqual(appHttpEvents, Symbol.for("timeout"), "receive did not return after an agent reply");
-  assert.equal(Object.hasOwn(appHttpEvents, "after"), false);
-  assert.equal(Object.hasOwn(appHttpEvents, "nextAfter"), false);
+  assert.equal(appHttpEvents.relayId, openedHttp.relayId);
+  assert.equal(appHttpEvents.after, 0);
+  assert.equal(appHttpEvents.nextAfter, replied.event.seq);
   assert.equal(appHttpEvents.items.length, 1);
   assert.equal(appHttpEvents.items[0].payload, 0);
-  await assert.rejects(() => client.receive(), /unacknowledged receive batch/);
+  await client.received({ relayId: openedHttp.relayId, through: appHttpEvents.nextAfter });
 
   httpStore.closeRelay({
-    relayId: openedHttp.relay.relayId,
+    relayId: openedHttp.relayId,
     reason: "old-closed",
     payload: { ok: true },
   });
-  const openedAfterClose = await client.openRelay({
-    appName: "debug-app-next",
-    payload: {},
-  });
-  assert.equal(openedAfterClose.created, true);
-  await client.received();
+  await assert.rejects(() => client.send({ relayId: openedHttp.relayId, payload: {} }), /Relay is not open/);
   assert.equal(httpStore.pollEvents({
-    relayId: openedHttp.relay.relayId,
+    relayId: openedHttp.relayId,
     client: "app",
     cursor: 0,
     types: ["relay.reply"],
   }).length, 0);
 
-  const pendingCloseReceive = client.receive();
+  const closeHttp = await client.openRelay({
+    appName: "debug-app-close",
+    payload: {},
+  });
+  const pendingCloseReceive = client.receive({ relayId: closeHttp.relayId, after: 0 });
   const closeEarly = await Promise.race([pendingCloseReceive, timeout(200)]);
   assert.equal(closeEarly, Symbol.for("timeout"), "receive returned before close");
-  await client.closeRelay({ reason: "smoke-close", payload: { ok: true } });
+  await client.closeRelay({ relayId: closeHttp.relayId, reason: "smoke-close", payload: { ok: true } });
   const closeEvents = await Promise.race([pendingCloseReceive, timeout(3000)]);
   assert.notEqual(closeEvents, Symbol.for("timeout"), "receive did not return after close");
+  assert.equal(closeEvents.relayId, closeHttp.relayId);
   assert.equal(closeEvents.items[0].status, "closed");
   assert.deepEqual(closeEvents.items[0].payload, { ok: true });
-  await client.received();
+  await client.received({ relayId: closeHttp.relayId, through: closeEvents.nextAfter });
+  const closedAgain = await client.closeRelay({ relayId: closeHttp.relayId });
+  assert.equal(closedAgain.event.seq, closeEvents.items[0].seq);
 } finally {
   if (originalRelayUrl === undefined) delete process.env.RELAY_URL;
   else process.env.RELAY_URL = originalRelayUrl;

@@ -1,7 +1,8 @@
 const $ = (id) => document.getElementById(id);
-let after = 0;
-let relay = null;
+let selectedRelayId = null;
+let relays = [];
 let replies = [];
+const afterByRelay = new Map();
 
 async function api(path, body) {
   const hasBody = arguments.length > 1;
@@ -20,15 +21,46 @@ function payload() {
   return text ? JSON.parse(text) : {};
 }
 
+function selectedRelay() {
+  return relays.find((relay) => relay.relayId === selectedRelayId) || null;
+}
+
+function selectedAfter() {
+  return afterByRelay.get(selectedRelayId) || 0;
+}
+
+function requireRelay() {
+  const relay = selectedRelay();
+  if (!relay) throw new Error("Select a relay first.");
+  return relay;
+}
+
 function render(message = "Ready.") {
+  const relay = selectedRelay();
   $("status").textContent = message;
-  $("relay").textContent = relay ? JSON.stringify({ ...relay, after }, null, 2) : "No relay";
+  $("relay").textContent = relay
+    ? JSON.stringify({ ...relay, after: selectedAfter() }, null, 2)
+    : "No relay";
   $("replies").textContent = replies.length ? JSON.stringify(replies, null, 2) : "No replies";
 }
 
+function renderRelayOptions() {
+  $("relays").replaceChildren(...relays.map((relay) => {
+    const option = document.createElement("option");
+    option.value = relay.relayId;
+    option.textContent = `${relay.appName} ${relay.state || relay.lifecycle} ${relay.relayId}`;
+    option.selected = relay.relayId === selectedRelayId;
+    return option;
+  }));
+}
+
 async function refresh() {
-  const { relays } = await api("/api/relays");
-  relay = relays.find((item) => item.status === "open") || relays[0] || null;
+  const result = await api("/api/relays?limit=10");
+  relays = result.relays;
+  if (!relays.some((relay) => relay.relayId === selectedRelayId)) {
+    selectedRelayId = relays.find((relay) => relay.lifecycle === "open")?.relayId || relays[0]?.relayId || null;
+  }
+  renderRelayOptions();
   render();
 }
 
@@ -37,35 +69,58 @@ async function openRelay() {
     appName: $("app-name").value.trim(),
     payload: { source: "smoke-page" },
   });
-  relay = result.relay;
-  after = result.after;
-  render(result.created ? "Opened." : "Reused.");
+  selectedRelayId = result.relayId;
+  afterByRelay.set(selectedRelayId, result.after);
+  await refresh();
+  render("Opened.");
 }
 
 async function send() {
-  const result = await api("/api/relay/send", payload());
+  const relay = requireRelay();
+  const result = await api("/api/relay/send", {
+    relayId: relay.relayId,
+    payload: payload(),
+  });
   render(`Sent ${result.event.seq}.`);
 }
 
 async function receive() {
+  const relay = requireRelay();
   render("Waiting for an agent reply or close...");
-  const result = await api("/api/relay/receive", { after });
+  const result = await api("/api/relay/receive", {
+    relayId: relay.relayId,
+    after: selectedAfter(),
+  });
   if (result.items.length) {
-    after = result.nextAfter;
+    afterByRelay.set(relay.relayId, result.nextAfter);
     replies.push(...result.items);
-    await api("/api/relay/received", { through: after });
+    await api("/api/relay/received", {
+      relayId: relay.relayId,
+      through: result.nextAfter,
+    });
   }
+  await refresh();
   render(`Received ${result.items.length}.`);
 }
 
 async function closeRelay() {
-  await api("/api/relay/close", { reason: "smoke-page-closed", payload: { source: "smoke-page" } });
-  relay = null;
+  const relay = requireRelay();
+  await api("/api/relay/close", {
+    relayId: relay.relayId,
+    reason: "smoke-page-closed",
+    payload: { source: "smoke-page" },
+  });
+  await refresh();
   render("Closed.");
 }
 
-for (const [id, fn] of Object.entries({ open: openRelay, send, receive, close: closeRelay })) {
+for (const [id, fn] of Object.entries({ open: openRelay, refresh, send, receive, close: closeRelay })) {
   $(id).addEventListener("click", () => fn().catch((error) => render(error.message)));
 }
+
+$("relays").addEventListener("change", (event) => {
+  selectedRelayId = event.target.value || null;
+  render();
+});
 
 refresh().catch((error) => render(error.message));
