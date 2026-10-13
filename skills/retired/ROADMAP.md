@@ -1,6 +1,6 @@
 # Skills Roadmap
 
-Status date: 2026-06-02
+Status date: 2026-10-13
 
 This note tracks skill-inventory decisions while the repository migration settles. It is not an ExecPlan; it is a lightweight product roadmap for what to keep, retire, or reshape next.
 
@@ -18,13 +18,10 @@ This note tracks skill-inventory decisions while the repository migration settle
 - `discussion`: still useful as portable behavior previously carried by starter-style guidance.
 - `consensus`: captures the repeated true-consensus workflow across red/green/adjudication subagent waves.
 - `grill-me`: used regularly and should stay active.
-- `chatgpt-pro-review`: useful in the Codex app browser for direct ChatGPT Pro review.
-- `friend`: read-only second-opinion CLI wrapper for Claude and Codex.
 - `humanizer`: used somewhat regularly and should stay active.
 - `reference-module`: migrated to a general skill and remains the repository reference workflow.
 - `skill-research`: captures the system-wide workflow audit used to find repeated manual work worth packaging.
 - `screenshot`: captures the user's repeated latest-Desktop-screenshot shortcut as a personal skill.
-- `scratch`: captures the repo-root scratch-file workflow used for docs and draft work.
 
 ## Migration Handoff
 
@@ -47,5 +44,10 @@ This note tracks skill-inventory decisions while the repository migration settle
 
 ## Recently Retired
 
+- `chatgpt-pro-review`: coding models became good enough that the separate ChatGPT Pro review workflow was no longer needed.
+- `chess`: the user stopped pursuing chess as a skill. No replacement skill was selected.
+- `friend`: T3 Code provides subagents across harnesses and replaces the separate CLI wrapper.
+- `relay`: the user started [codex-router](https://github.com/Skarian/codex-router) as the replacement project.
+- `scratch`: better harness UIs removed the need to preview scratch files directly.
 - `continuity`: retired because Codex memories now cover the continuity use case directly, and a separate repo-local continuity ledger can create drift from memory and current repo truth.
 - `precommit-review`: retired because Codex `/review` and Codex code review now cover commit-readiness review without a dedicated phased skill.

@@ -1,0 +1,20 @@
+{
+  "name": "skarian-skills",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Install Skarian's selected skills from their original sources.",
+  "type": "module",
+  "bin": {
+    "skarian-skills": "scripts/install.mjs"
+  },
+  "files": [
+    "scripts/install.mjs",
+    "ACKNOWLEDGMENTS.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test scripts/install.test.mjs"
+  }
+}

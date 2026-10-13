@@ -4,23 +4,25 @@ Skills meant to be installed system-wide
 
 ## Install
 
-Install skills from this category:
+Install this category, including the selected upstream skills:
 
 ```bash
-npx skills add https://github.com/Skarian/skills/tree/main/skills/general --global
+npx --yes github:Skarian/skills
 ```
+
+The installer installs my skills from this repository and the selected external skills globally. External skills come directly from their original repositories.
+
+Update them with `npx skills@latest update -g`. Rerun the install command to install new skills added to the selection.
 
 ## Skills
 
 | Skill | Description |
 | --- | --- |
-| `chatgpt-pro-review` | Consult ChatGPT Pro through the Codex app browser |
+| `asd-ste100` ([source](https://github.com/danyuchn/asd-ste100-skill)) | Rewrite ambiguous English with Simplified Technical English rules |
 | `consensus` | Use subagent review waves to reach consensus |
 | `discussion` | Discuss multiple open items clearly |
-| `friend` | Use Claude or Codex for reviews |
-| `grill-me` | Create a shared understanding between agent and user |
-| `handoff` | Compact the current conversation into a handoff document for another agent to pick up |
-| `humanizer` | Remove AI slop from writing |
+| `grilling` ([source](https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md)) | Interview the user to reach a shared understanding of a plan or decision |
+| `handoff` ([source](https://github.com/mattpocock/skills/blob/main/skills/productivity/handoff/SKILL.md)) | Compact the current conversation into a handoff document for another agent to pick up |
+| `humanizer` ([source](https://github.com/blader/humanizer)) | Remove AI slop from writing |
 | `reference-module` | Study a git repository with a local cache across projects |
-| `relay` | Interact with Codex or Claude from another UI or application |
 | `skill-research` | Scan Codex sessions, memories, and Chronicle for potential skills |

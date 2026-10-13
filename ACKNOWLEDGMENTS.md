@@ -6,9 +6,10 @@ Some skills and repo docs in this repo originated elsewhere or were shaped by ex
 
 | Item | Source | Location | Note |
 | --- | --- | --- | --- |
-| `grill-me` | [mattpocock/skills](https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md) | [skills/general/grill-me](skills/general/grill-me) | Originated in another repository |
-| `handoff` | [mattpocock/skills](https://github.com/mattpocock/skills/blob/main/skills/productivity/handoff/SKILL.md) | [skills/general/handoff](skills/general/handoff) | Originated in another repository |
-| `humanizer` | [blader/humanizer](https://github.com/blader/humanizer/blob/main/SKILL.md) | [skills/general/humanizer](skills/general/humanizer) | Originated in another repository |
+| `asd-ste100` | [danyuchn/asd-ste100-skill](https://github.com/danyuchn/asd-ste100-skill) | Installed from upstream by [the installer](scripts/install.mjs) | Authored upstream; no vendored copy |
+| `grilling` | [mattpocock/skills](https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md) | Installed from upstream by [the installer](scripts/install.mjs) | Replaces the former vendored `grill-me`; follows the upstream implementation directly |
+| `handoff` | [mattpocock/skills](https://github.com/mattpocock/skills/blob/main/skills/productivity/handoff/SKILL.md) | Installed from upstream by [the installer](scripts/install.mjs) | Formerly vendored; now installed from upstream |
+| `humanizer` | [blader/humanizer](https://github.com/blader/humanizer/blob/main/SKILL.md) | Installed from upstream by [the installer](scripts/install.mjs) | Formerly vendored; now installed from upstream |
 | `skill-research` | [VB on X](https://x.com/reach_vb/status/2058538305872949490?s=20) | [skills/general/skill-research](skills/general/skill-research) | Inspired by an external post |
 | `execplan` | [OpenAI Codex ExecPlans cookbook](https://developers.openai.com/cookbook/articles/codex_exec_plans) | [skills/project/execplan](skills/project/execplan) | Inspired by an external article |
 

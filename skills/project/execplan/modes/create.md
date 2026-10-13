@@ -12,9 +12,9 @@ Initialize `.agent/execplans/INDEX.md` from `templates/index.md` if it is missin
 
 ## Optional Companion Skill
 
-Before drafting, ask whether the user wants to also use the `grill-me` skill to help seed the ExecPlan.
+Before drafting, ask whether the user wants to also use the `grilling` skill to help seed the ExecPlan.
 
-If they say yes, use `grill-me` as a separate companion workflow before drafting. If they say no, continue with the basic create flow here.
+If they say yes, use `grilling` as a separate companion workflow before drafting. If they say no, continue with the basic create flow here.
 
 ## Create Flow
 

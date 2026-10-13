@@ -7,12 +7,13 @@ Niche workflows specific to my use cases, installed system-wide
 Install skills from this category:
 
 ```bash
-npx skills add https://github.com/Skarian/skills/tree/main/skills/personal --global
+npx --yes github:Skarian/skills personal
 ```
+
+Update installed personal skills with `npx skills@latest update -g`.
 
 ## Skills
 
 | Skill | Description |
 | --- | --- |
-| `chess` | Personal chess learning loop with Maia-3 practice and review |
-| `screenshot` | Review the latest screenshot on Desktop |
+| `mac-screenshot` | Review the latest macOS screenshot on Desktop |
