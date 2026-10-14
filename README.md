@@ -44,7 +44,7 @@ The first command installs all eight general skills. The second installs `mac-sc
 
 The general preset also removes skills it previously installed when they leave the selection. It installs the current selection first and only cleans up after every install succeeds. Personal and project presets do not remove skills.
 
-Each machine records managed general skills and their sources in `~/.agents/skarian-general.json`. Cleanup requires a matching GitHub source in the Skills CLI's global lock. Independently installed skills, including Cloudflare and Runpod, stay outside this record. A skill replaced from another source is left alone. Removing a managed skill uninstalls that name globally across agents.
+The preset records its general skills in `~/.agents/skarian-general.json`. Cleanup only removes recorded skills whose installed source still matches. Removal applies globally across agents.
 
 Run the preset once on each machine to start tracking. Skills removed from the selection before that first run need manual removal. Keep the record file for future cleanup.
 
