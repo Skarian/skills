@@ -66,12 +66,6 @@ For my setup, rerun the preset commands to update with the same explicit agent t
 
 Rerun the general preset to synchronize additions, updates, and removals. The native update command only refreshes installed skills; it does not synchronize the selection.
 
-## Maintain the Selection
-
-Keep source code for my skills under its category. Give each external skill a README-only folder with a description, upstream source, and install command. Add its source and selected skill name to `scripts/install.mjs`, which also holds my agent preset.
-
-Update the root catalog, category catalog, and acknowledgments when the selection changes.
-
 ## Project
 
 | Skill | Description |

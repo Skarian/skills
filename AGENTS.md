@@ -56,6 +56,8 @@ Preserve where they came from, credit the original authors in the right places, 
 
 Install external skills from upstream instead of vendoring copies. Give each one a README-only folder in its category with a description, source, and install command. Link these folders from the catalogs and preserve credit in the acknowledgments. Keep my one-line agent preset in `scripts/install.mjs`.
 
+When the selection changes, update `scripts/install.mjs`, the root and category catalogs, and `ACKNOWLEDGMENTS.md`.
+
 ### Retire skills deliberately
 
 Before retiring a skill, interview me.
