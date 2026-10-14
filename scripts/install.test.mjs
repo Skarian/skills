@@ -11,7 +11,7 @@ const installer = fileURLToPath(new URL("./install.mjs", import.meta.url));
 async function runInstaller(args = [], failOn = "", response = "installed", fixture = {}) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "skills-installer-")));
   try {
-    const bin = path.join(root, "bin");
+    const bin = path.join(root, "npm with spaces");
     const log = path.join(root, "calls.ndjson");
     await mkdir(bin);
     const agents = path.join(root, ".agents");
@@ -30,8 +30,9 @@ async function runInstaller(args = [], failOn = "", response = "installed", fixt
     await writeFile(stub, `import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-const args = process.argv.slice(2);
-appendFileSync(process.env.INSTALL_TEST_LOG, JSON.stringify({ args, cwd: process.cwd(), npmPackage: process.env.npm_config_package, npmCall: process.env.npm_config_call }) + "\\n");
+const transportArgs = process.argv.slice(2);
+const args = transportArgs[0] === "exec" ? ["--yes", "skills@latest", ...transportArgs.slice(5)] : transportArgs;
+appendFileSync(process.env.INSTALL_TEST_LOG, JSON.stringify({ args, transportArgs, cwd: process.cwd(), npmPackage: process.env.npm_config_package, npmCall: process.env.npm_config_call }) + "\\n");
 if (args.includes(process.env.INSTALL_TEST_FAIL_ON)) process.exit(7);
 const lockFile = join(process.env.XDG_STATE_HOME, "skills", ".skill-lock.json");
 const lock = JSON.parse(readFileSync(lockFile, "utf8"));
@@ -77,6 +78,8 @@ console.log(process.env.INSTALL_TEST_RESPONSE === "invalid" ? "invalid output" :
         INSTALL_TEST_RESPONSE: response,
         npm_config_package: "outer-installer-package",
         npm_config_call: "outer-installer-command",
+        npm_execpath: stub,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --throw-deprecation`.trim(),
       },
       encoding: "utf8",
     });
@@ -124,6 +127,15 @@ test("nested npx does not inherit the outer package or command", async () => {
   for (const call of result.calls) {
     assert.equal(call.npmPackage, undefined);
     assert.equal(call.npmCall, undefined);
+  }
+});
+
+test("npm runs directly without shell deprecations, including paths with spaces", async () => {
+  const result = await runInstaller();
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /DEP0190|DeprecationWarning/);
+  for (const call of result.calls) {
+    assert.deepEqual(call.transportArgs.slice(0, 5), ["exec", "--yes", "--package=skills@latest", "--", "skills"]);
   }
 });
 

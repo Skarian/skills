@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { cleanGeneral, generalState, rememberGeneral } from "./general.mjs";
 
 const agents = ["codex", "gemini-cli", "zed", "claude-code", "grok"];
@@ -28,12 +30,15 @@ for (const name of Object.keys(env)) {
   if (/^npm_config_(package|call)$/i.test(name)) delete env[name];
 }
 
-const run = (args, output = "pipe") => spawnSync("npx", ["--yes", "skills@latest", ...args], {
+// Invoke npm with Node directly, including when npm lives under a path with spaces.
+const npm = env.npm_execpath || join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+const useNpm = existsSync(npm);
+const run = (args, output = "pipe") => spawnSync(useNpm ? process.execPath : "npx", useNpm
+  ? [npm, "exec", "--yes", "--package=skills@latest", "--", "skills", ...args]
+  : ["--yes", "skills@latest", ...args], {
   stdio: ["inherit", output, "inherit"],
   encoding: "utf8",
   env,
-  // Windows exposes npx as a .cmd file. Dynamic removal names are validated by generalState().
-  shell: process.platform === "win32",
 });
 
 try {
