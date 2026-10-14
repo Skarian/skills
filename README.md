@@ -40,7 +40,7 @@ npx --yes github:Skarian/skills
 npx --yes github:Skarian/skills personal
 ```
 
-The first command installs all eight general skills. The second installs `mac-screenshot` globally.
+The first command installs the full general selection. The second installs `mac-screenshot` globally.
 
 The general preset also removes skills it previously installed when they leave the selection. It installs the current selection first and only cleans up after every install succeeds. Personal and project presets do not remove skills.
 
@@ -68,9 +68,9 @@ Rerun the general preset to synchronize additions, updates, and removals. The na
 
 ## Maintain the Selection
 
-Keep source code for my skills under its category. Add external sources and selected skill names to `scripts/install.mjs`, which also holds my agent preset.
+Keep source code for my skills under its category. Give each external skill a README-only folder with a description, upstream source, and install command. Add its source and selected skill name to `scripts/install.mjs`, which also holds my agent preset.
 
-Update the root catalog, category catalog, and acknowledgments when the selection changes. External skills remain active without a local source directory.
+Update the root catalog, category catalog, and acknowledgments when the selection changes.
 
 ## Project
 
@@ -82,12 +82,12 @@ Update the root catalog, category catalog, and acknowledgments when the selectio
 
 | Skill | Description |
 | --- | --- |
-| `asd-ste100` ([source](https://github.com/danyuchn/asd-ste100-skill)) | Rewrite ambiguous English with Simplified Technical English rules |
+| [asd-ste100](skills/general/asd-ste100/) | Rewrite ambiguous English with Simplified Technical English rules |
 | `consensus` | Use subagent review waves to reach consensus |
 | `discussion` | Discuss multiple open items clearly |
-| `grilling` ([source](https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md)) | Interview the user to reach a shared understanding of a plan or decision |
-| `handoff` ([source](https://github.com/mattpocock/skills/blob/main/skills/productivity/handoff/SKILL.md)) | Compact the current conversation into a handoff document for another agent to pick up |
-| `humanizer` ([source](https://github.com/blader/humanizer/blob/main/SKILL.md)) | Remove AI slop from writing |
+| [grilling](skills/general/grilling/) | Interview the user to reach a shared understanding of a plan or decision |
+| [handoff](skills/general/handoff/) | Compact the current conversation into a handoff document for another agent to pick up |
+| [humanizer](skills/general/humanizer/) | Remove AI slop from writing |
 | `reference-module` | Study a git repository with a local cache across projects |
 | `skill-research` | Scan Codex sessions, memories, and Chronicle for potential skills |
 
