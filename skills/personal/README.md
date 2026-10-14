@@ -16,6 +16,6 @@ Update installed personal skills with `npx skills@latest update -g`.
 
 ## Skills
 
-| Skill | Description |
-| --- | --- |
-| `mac-screenshot` | Review the latest macOS screenshot on Desktop |
+| Skill | Description | Source |
+| --- | --- | --- |
+| `mac-screenshot` | Review the latest macOS screenshot on Desktop | - |

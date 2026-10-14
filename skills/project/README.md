@@ -16,6 +16,6 @@ Run this command in the target project. Update its installed skills with `npx sk
 
 ## Skills
 
-| Skill      | Description                                       |
-| ---------- | ------------------------------------------------- |
-| `execplan` | Create detailed plans for long-running agent work |
+| Skill | Description | Source |
+| ---------- | ------------------------------------------------- | --- |
+| `execplan` | Create detailed plans for long-running agent work | - |

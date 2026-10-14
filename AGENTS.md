@@ -56,7 +56,7 @@ Preserve where they came from, credit the original authors in the right places, 
 
 Install external skills from upstream instead of vendoring copies. Give each one a README-only folder in its category with a description, source, and install command. Link these folders from the catalogs and preserve credit in the acknowledgments. Keep my one-line agent preset in `scripts/install.mjs`.
 
-Mark external skills in the catalog tables and link their upstream repositories.
+Use a Source column in every skill catalog table. Link external skills to their upstream repositories without an "External:" prefix; use `-` for my own skills.
 
 When the selection changes, update `scripts/install.mjs`, the root and category catalogs, and `ACKNOWLEDGMENTS.md`.
 

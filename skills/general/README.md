@@ -20,11 +20,11 @@ Update them with `npx skills@latest update -g`. Rerun the relevant install comma
 
 | Skill | Description | Source |
 | --- | --- | --- |
-| [asd-ste100](asd-ste100/) | Rewrite ambiguous English with Simplified Technical English rules | External: [danyuchn/asd-ste100-skill](https://github.com/danyuchn/asd-ste100-skill) |
-| `consensus` | Use subagent review waves to reach consensus | |
-| `discussion` | Discuss multiple open items clearly | |
-| [grilling](grilling/) | Interview the user to reach a shared understanding of a plan or decision | External: [mattpocock/skills](https://github.com/mattpocock/skills) |
-| [handoff](handoff/) | Compact the current conversation into a handoff document for another agent to pick up | External: [mattpocock/skills](https://github.com/mattpocock/skills) |
-| [humanizer](humanizer/) | Remove AI slop from writing | External: [blader/humanizer](https://github.com/blader/humanizer) |
-| `reference-module` | Study a git repository with a local cache across projects | |
-| `skill-research` | Scan Codex sessions, memories, and Chronicle for potential skills | |
+| [asd-ste100](asd-ste100/) | Rewrite ambiguous English with Simplified Technical English rules | [danyuchn/asd-ste100-skill](https://github.com/danyuchn/asd-ste100-skill) |
+| `consensus` | Use subagent review waves to reach consensus | - |
+| `discussion` | Discuss multiple open items clearly | - |
+| [grilling](grilling/) | Interview the user to reach a shared understanding of a plan or decision | [mattpocock/skills](https://github.com/mattpocock/skills) |
+| [handoff](handoff/) | Compact the current conversation into a handoff document for another agent to pick up | [mattpocock/skills](https://github.com/mattpocock/skills) |
+| [humanizer](humanizer/) | Remove AI slop from writing | [blader/humanizer](https://github.com/blader/humanizer) |
+| `reference-module` | Study a git repository with a local cache across projects | - |
+| `skill-research` | Scan Codex sessions, memories, and Chronicle for potential skills | - |
