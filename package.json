@@ -9,6 +9,7 @@
   },
   "files": [
     "scripts/install.mjs",
+    "scripts/general.mjs",
     "ACKNOWLEDGMENTS.md"
   ],
   "engines": {

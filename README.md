@@ -42,6 +42,12 @@ npx --yes github:Skarian/skills personal
 
 The first command installs all eight general skills. The second installs `mac-screenshot` globally.
 
+The general preset also removes skills it previously installed when they leave the selection. It installs the current selection first and only cleans up after every install succeeds. Personal and project presets do not remove skills.
+
+Each machine records managed general skills and their sources in `~/.agents/skarian-general.json`. Cleanup requires a matching GitHub source in the Skills CLI's global lock. Independently installed skills, including Cloudflare and Runpod, stay outside this record. A skill replaced from another source is left alone. Removing a managed skill uninstalls that name globally across agents.
+
+Run the preset once on each machine to start tracking. Skills removed from the selection before that first run need manual removal. Keep the record file for future cleanup.
+
 Run `npx --yes github:Skarian/skills project` in a project to install `execplan` for the same five agents.
 
 The preset passes explicit targets to avoid the Skills CLI's [PromptScript global-install bug](https://github.com/vercel-labs/skills/issues/1496). It checks structured results and stops on incomplete installs.
@@ -58,7 +64,7 @@ Run `npx skills@latest update -p` inside a project to update its project skills.
 
 For my setup, rerun the preset commands to update with the same explicit agent targets. The upstream update command can still encounter the PromptScript bug when it reinstalls changed global skills.
 
-Rerun the install command to install new skills added to this selection. Updates refresh installed skills; they do not synchronize the selection.
+Rerun the general preset to synchronize additions, updates, and removals. The native update command only refreshes installed skills; it does not synchronize the selection.
 
 ## Maintain the Selection
 
