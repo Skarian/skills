@@ -56,6 +56,8 @@ Preserve where they came from, credit the original authors in the right places, 
 
 Install external skills from upstream instead of vendoring copies. Give each one a README-only folder in its category with a description, source, and install command. Link these folders from the catalogs and preserve credit in the acknowledgments. Keep my one-line agent preset in `scripts/install.mjs`.
 
+Mark external skills in the catalog tables and link their upstream repositories.
+
 When the selection changes, update `scripts/install.mjs`, the root and category catalogs, and `ACKNOWLEDGMENTS.md`.
 
 ### Retire skills deliberately
@@ -76,4 +78,5 @@ These are here to keep the repo pointed in the right direction:
 - keep script command surfaces small, boring, and cross-platform
 - preserve provenance and credit for work from others
 - put the skill catalog first in the README; keep it focused on skills and install/update commands, with maintenance instructions in `AGENTS.md`
+- preserve the user's README intro
 - when a repo-shaping decision is fuzzy, ask me instead of encoding a generic default
