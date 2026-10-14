@@ -11,13 +11,13 @@ Skills I use across projects, installed globally.
 | Skill | Description | Source |
 | --- | --- | --- |
 | [asd-ste100](skills/general/asd-ste100/) | Rewrite ambiguous English with Simplified Technical English rules | External: [danyuchn/asd-ste100-skill](https://github.com/danyuchn/asd-ste100-skill) |
-| [consensus](skills/general/consensus/) | Use subagent review waves to reach consensus | This repo |
-| [discussion](skills/general/discussion/) | Discuss multiple open items clearly | This repo |
+| [consensus](skills/general/consensus/) | Use subagent review waves to reach consensus | |
+| [discussion](skills/general/discussion/) | Discuss multiple open items clearly | |
 | [grilling](skills/general/grilling/) | Interview the user to reach a shared understanding of a plan or decision | External: [mattpocock/skills](https://github.com/mattpocock/skills) |
 | [handoff](skills/general/handoff/) | Write a handoff for an agent to continue in a new conversation | External: [mattpocock/skills](https://github.com/mattpocock/skills) |
 | [humanizer](skills/general/humanizer/) | Remove AI slop from writing | External: [blader/humanizer](https://github.com/blader/humanizer) |
-| [reference-module](skills/general/reference-module/) | Study a git repository with a local cache across projects | This repo |
-| [skill-research](skills/general/skill-research/) | Scan Codex sessions, memories, and Chronicle for potential skills | This repo |
+| [reference-module](skills/general/reference-module/) | Study a git repository with a local cache across projects | |
+| [skill-research](skills/general/skill-research/) | Scan Codex sessions, memories, and Chronicle for potential skills | |
 
 ## Project
 
@@ -43,7 +43,7 @@ Requires Node.js 22.20 or newer, npm, and Git. These commands let you choose ski
 
 | Category | Command |
 | --- | --- |
-| General, from this repo | `npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/general --global` |
+| General | `npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/general --global` |
 | Personal | `npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/personal --global` |
 | Project | `npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/project` |
 
