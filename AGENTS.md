@@ -75,4 +75,5 @@ These are here to keep the repo pointed in the right direction:
 - keep skill instructions short unless the workflow truly needs more
 - keep script command surfaces small, boring, and cross-platform
 - preserve provenance and credit for work from others
+- put the skill catalog first in the README; keep it focused on skills and install/update commands, with maintenance instructions in `AGENTS.md`
 - when a repo-shaping decision is fuzzy, ask me instead of encoding a generic default
