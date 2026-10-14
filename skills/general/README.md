@@ -4,15 +4,23 @@ Skills meant to be installed system-wide
 
 ## Install
 
-Install this category, including the selected upstream skills:
+Install skills from this repo with interactive skill and agent selection:
 
 ```bash
-npx --yes github:Skarian/skills
+npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/general --global
 ```
 
-The installer installs my skills from this repository and the selected external skills globally. External skills come directly from their original repositories.
+Install the selected upstream skills directly:
 
-Update them with `npx skills@latest update -g`. Rerun the install command to install new skills added to the selection.
+```bash
+npx skills@latest add mattpocock/skills --skill grilling handoff --global
+npx skills@latest add blader/humanizer --skill humanizer --global
+npx skills@latest add danyuchn/asd-ste100-skill --skill asd-ste100 --global
+```
+
+All commands install globally. See [My Setup](../../README.md#my-setup) for my one-line preset, which installs the whole general selection for five named agents.
+
+Update them with `npx skills@latest update -g`. Rerun the relevant install command to install new skills added to the selection.
 
 ## Skills
 

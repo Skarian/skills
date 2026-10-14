@@ -54,7 +54,7 @@ Some of the best skills in this repo may come from other people. Treat that as a
 
 Preserve where they came from, credit the original authors in the right places, and make the skill easy for me and others to use from this library. When adapting an imported skill, keep the useful parts intact and make the packaging fit this repo.
 
-Install external skills from upstream through `scripts/install.mjs` instead of vendoring copies. Keep their source links and descriptions in the catalogs and acknowledgments.
+Install external skills from upstream instead of vendoring copies. Document interactive install commands for others; keep my one-line agent preset in `scripts/install.mjs`. Keep source links and descriptions in the catalogs and acknowledgments.
 
 ### Retire skills deliberately
 

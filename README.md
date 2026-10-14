@@ -2,7 +2,7 @@
 
 A personal skill library for software projects, agent workflows, and practical routines I want to reuse
 
-It includes skills I wrote and a selection of upstream skills, installed from their original sources with one command.
+It includes skills I wrote and a selection of upstream skills. Each skill installs from its original source.
 
 ## Categories
 
@@ -13,15 +13,38 @@ It includes skills I wrote and a selection of upstream skills, installed from th
 
 ## Install
 
+Use the interactive Skills CLI to choose skills and target agents. General and personal skills install globally. Project skills install in the current directory.
+
 | Category | Command |
 | --- | --- |
-| General (default) | `npx --yes github:Skarian/skills` |
-| Personal | `npx --yes github:Skarian/skills personal` |
-| Project | `npx --yes github:Skarian/skills project` |
+| General, from this repo | `npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/general --global` |
+| Personal | `npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/personal --global` |
+| Project | `npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/project` |
 
-Requires Node.js 20 or newer, npm, and Git. General and personal skills install globally. Project skills install in the current directory.
+Install the selected upstream general skills separately:
 
-The installer runs the Skills CLI with explicit skill names and automatic agent detection. External skills install directly from upstream.
+```bash
+npx skills@latest add mattpocock/skills --skill grilling handoff --global
+npx skills@latest add blader/humanizer --skill humanizer --global
+npx skills@latest add danyuchn/asd-ste100-skill --skill asd-ste100 --global
+```
+
+Requires Node.js 22.20 or newer, npm, and Git.
+
+## My Setup
+
+These presets install the selected skills for Codex, Gemini CLI, Zed, Claude Code, and Grok Build without interactive selection:
+
+```bash
+npx --yes github:Skarian/skills
+npx --yes github:Skarian/skills personal
+```
+
+The first command installs all eight general skills. The second installs `mac-screenshot` globally.
+
+Run `npx --yes github:Skarian/skills project` in a project to install `execplan` for the same five agents.
+
+The preset passes explicit targets to avoid the Skills CLI's [PromptScript global-install bug](https://github.com/vercel-labs/skills/issues/1496). It checks structured results and stops on incomplete installs.
 
 ## Update
 
@@ -33,11 +56,13 @@ npx skills@latest update -g
 
 Run `npx skills@latest update -p` inside a project to update its project skills.
 
+For my setup, rerun the preset commands to update with the same explicit agent targets. The upstream update command can still encounter the PromptScript bug when it reinstalls changed global skills.
+
 Rerun the install command to install new skills added to this selection. Updates refresh installed skills; they do not synchronize the selection.
 
 ## Maintain the Selection
 
-Keep source code for my skills under its category. Add external sources and selected skill names to `scripts/install.mjs`.
+Keep source code for my skills under its category. Add external sources and selected skill names to `scripts/install.mjs`, which also holds my agent preset.
 
 Update the root catalog, category catalog, and acknowledgments when the selection changes. External skills remain active without a local source directory.
 

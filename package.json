@@ -12,7 +12,7 @@
     "ACKNOWLEDGMENTS.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.20.0"
   },
   "scripts": {
     "test": "node --test scripts/install.test.mjs"

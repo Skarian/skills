@@ -7,8 +7,10 @@ Skills for software projects, installed into the current repo
 Install skills from this category:
 
 ```bash
-npx --yes github:Skarian/skills project
+npx skills@latest add https://github.com/Skarian/skills/tree/main/skills/project
 ```
+
+This command uses interactive skill and agent selection. See [My Setup](../../README.md#my-setup) for my five-agent preset.
 
 Run this command in the target project. Update its installed skills with `npx skills@latest update -p`.
 

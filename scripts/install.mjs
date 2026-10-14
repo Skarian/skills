@@ -2,6 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 
+const agents = ["codex", "gemini-cli", "zed", "claude-code", "grok"];
 const own = (category) => `https://github.com/Skarian/skills/tree/main/skills/${category}`;
 const sources = {
   general: [
@@ -28,16 +29,27 @@ for (const name of Object.keys(env)) {
 
 for (const [source, skills] of sources[category]) {
   console.log(`Installing ${skills.join(", ")} from ${source}`);
-  const args = ["--yes", "skills@latest", "add", source, "--skill", ...skills, "--yes"];
+  const args = ["--yes", "skills@latest", "add", source, "--skill", ...skills, "--yes", "--agent", ...agents, "--json"];
   if (category !== "project") args.push("--global");
   const result = spawnSync("npx", args, {
-    stdio: "inherit",
+    stdio: ["inherit", "pipe", "inherit"],
+    encoding: "utf8",
     env,
     // Windows exposes npx as a .cmd file. All child arguments come from this catalog.
     shell: process.platform === "win32",
   });
-  if (result.error || result.status !== 0) {
+  let reports;
+  try { reports = JSON.parse(result.stdout); } catch { /* Missing results fail below. */ }
+  const complete = Array.isArray(reports) && skills.every((name) =>
+    reports.some((report) => report?.name === name && report.status === "installed")
+  ) && reports.every((report) => report?.status === "installed");
+  if (result.error || result.status !== 0 || !complete) {
     console.error(`Installation failed for ${source}${result.error ? `: ${result.error.message}` : ""}`);
+    for (const report of Array.isArray(reports) ? reports : []) {
+      if (report?.status !== "installed") console.error(report?.error || "A skill did not install.");
+    }
+    if (!complete) console.error("The CLI did not report every requested skill as installed.");
     process.exit(result.status || 1);
   }
+  console.log(`Installed ${skills.join(", ")}`);
 }

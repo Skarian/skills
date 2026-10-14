@@ -8,7 +8,7 @@ import test from "node:test";
 
 const installer = fileURLToPath(new URL("./install.mjs", import.meta.url));
 
-async function runInstaller(args = [], failOn = "") {
+async function runInstaller(args = [], failOn = "", response = "installed") {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "skills-installer-")));
   try {
     const bin = path.join(root, "bin");
@@ -19,6 +19,12 @@ async function runInstaller(args = [], failOn = "") {
 const args = process.argv.slice(2);
 appendFileSync(process.env.INSTALL_TEST_LOG, JSON.stringify({ args, cwd: process.cwd(), npmPackage: process.env.npm_config_package, npmCall: process.env.npm_config_call }) + "\\n");
 if (args.includes(process.env.INSTALL_TEST_FAIL_ON)) process.exit(7);
+const selected = args.slice(args.indexOf("--skill") + 1);
+const names = selected.slice(0, selected.findIndex((arg) => arg.startsWith("-")));
+const reports = names.map((name) => ({ name, status: "installed" }));
+if (process.env.INSTALL_TEST_RESPONSE === "failed") reports[0] = { name: names[0], status: "failed", error: "Fixture target refused installation" };
+if (process.env.INSTALL_TEST_RESPONSE === "missing") reports.pop();
+console.log(process.env.INSTALL_TEST_RESPONSE === "invalid" ? "invalid output" : JSON.stringify(reports));
 `);
     const launcher = process.platform === "win32"
       ? `@"${process.execPath}" "${stub}" %*\r\n`
@@ -31,6 +37,7 @@ if (args.includes(process.env.INSTALL_TEST_FAIL_ON)) process.exit(7);
         PATH: `${bin}${path.delimiter}${process.env.PATH}`,
         INSTALL_TEST_LOG: log,
         INSTALL_TEST_FAIL_ON: failOn,
+        INSTALL_TEST_RESPONSE: response,
         npm_config_package: "outer-installer-package",
         npm_config_call: "outer-installer-command",
       },
@@ -50,11 +57,11 @@ test("default install uses the selected upstream sources and global scope", asyn
   const result = await runInstaller();
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.calls.map(({ args }) => args), [
-    ["--yes", "skills@latest", "add", "https://github.com/Skarian/skills/tree/main/skills/general", "--skill", "consensus", "discussion", "reference-module", "skill-research", "--yes", "--global"],
-    ["--yes", "skills@latest", "add", "mattpocock/skills", "--skill", "grilling", "handoff", "--yes", "--global"],
-    ["--yes", "skills@latest", "add", "blader/humanizer", "--skill", "humanizer", "--yes", "--global"],
-    ["--yes", "skills@latest", "add", "danyuchn/asd-ste100-skill", "--skill", "asd-ste100", "--yes", "--global"],
-  ]);
+    ["--yes", "skills@latest", "add", "https://github.com/Skarian/skills/tree/main/skills/general", "--skill", "consensus", "discussion", "reference-module", "skill-research", "--yes"],
+    ["--yes", "skills@latest", "add", "mattpocock/skills", "--skill", "grilling", "handoff", "--yes"],
+    ["--yes", "skills@latest", "add", "blader/humanizer", "--skill", "humanizer", "--yes"],
+    ["--yes", "skills@latest", "add", "danyuchn/asd-ste100-skill", "--skill", "asd-ste100", "--yes"],
+  ].map((args) => [...args, "--agent", "codex", "gemini-cli", "zed", "claude-code", "grok", "--json", "--global"]));
 });
 
 test("personal install selects mac-screenshot globally", async () => {
@@ -97,4 +104,20 @@ test("a failed source stops installation and preserves the exit code", async () 
   assert.equal(result.status, 7);
   assert.equal(result.calls.length, 2);
   assert.match(result.stderr, /Installation failed for mattpocock\/skills/);
+});
+
+test("partial failures stop installation even when the child exits successfully", async () => {
+  const result = await runInstaller([], "", "failed");
+  assert.equal(result.status, 1);
+  assert.equal(result.calls.length, 1);
+  assert.match(result.stderr, /Fixture target refused installation/);
+});
+
+test("missing or invalid install results cannot report success", async () => {
+  for (const response of ["missing", "invalid"]) {
+    const result = await runInstaller([], "", response);
+    assert.equal(result.status, 1);
+    assert.equal(result.calls.length, 1);
+    assert.match(result.stderr, /did not report every requested skill/);
+  }
 });
